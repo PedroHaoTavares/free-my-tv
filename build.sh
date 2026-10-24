@@ -76,6 +76,9 @@ final class Config {
     static final String THEME = "$(prop theme auto)";
     static final String COINS = "$(prop coins '')";
     static final String SHELF = "$(prop shelf '')";
+    static final String WATER_EVERY = "$(prop water_every 0)";
+    static final String WATER_FROM = "$(prop water_from 8)";
+    static final String WATER_TO = "$(prop water_to 23)";
     static final String JELLYFIN_URL = "$(prop jellyfin_url '')";
     static final String JELLYFIN_USER = "$(prop jellyfin_user '')";
     static final String JELLYFIN_PASSWORD = "$(prop jellyfin_password '')";

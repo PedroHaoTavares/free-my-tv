@@ -8,5 +8,6 @@ public class App extends Application {
         super.onCreate();
         Prefs.init(this);
         Place.init(this);
+        Water.schedule(this);   // every process start (boot, update): the alarm is set again, never twice
     }
 }

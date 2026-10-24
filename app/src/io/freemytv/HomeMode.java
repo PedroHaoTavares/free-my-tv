@@ -99,8 +99,12 @@ final class HomeMode {
         HTC_HOME,                                                                     // the stock home (and an ad SDK)
     };
 
-    /** The voice assistant, only with disable_assistant=true in config.properties (the mic button stops working). */
-    static final String[] ASSISTANT = {"com.google.android.katniss", "com.android.hotwordenrollment.okgoogle"};
+    /**
+     * The voice assistant, only with disable_assistant=true in config.properties (the mic button stops working). With it,
+     * also Google's text-to-speech (its voice; ~45 MB on a 2 GB TCL), which TalkBack needs too.
+     */
+    static final String[] ASSISTANT = {"com.google.android.katniss", "com.android.hotwordenrollment.okgoogle",
+            "com.google.android.tts"};
 
     /** Never turned off, not even by mistake (picture, sound, inputs, remote, store). Checked before every disable. */
     private static final Set<String> PROTECTED = new HashSet<>(Arrays.asList(

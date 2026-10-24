@@ -224,6 +224,7 @@
  "shelf|Off": "Off",
  "tab|All": "All",
  "tab|Home": "Home",
+ "tab|New": "New",
  "talkback|Sunrise {time}": "Sunrise {time}",
  "the TV asked for TLS (wireless debugging); use USB debugging": "the TV asked for TLS (wireless debugging); use USB debugging",
  "the TV rejected the app's key": "the TV rejected the app's key",
@@ -249,5 +250,6 @@
  "{n} min left": "{n} min left",
  "{n} ms": "{n} ms",
  "{time} left": "{time} left",
- "← → to move · OK to drop · Back to cancel": "← → to move · OK to drop · Back to cancel"
+ "← → to move · OK to drop · Back to cancel": "← → to move · OK to drop · Back to cancel",
+ "💧 Time to drink water": "💧 Time to drink water"
 }

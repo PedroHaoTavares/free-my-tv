@@ -69,20 +69,24 @@ final class Jellyfin {
 
     /** Recs.Pick.kind of the first tab, "Home": what you were watching last, in any library. */
     static final String HOME_KIND = "jfhome";
+    /** Recs.Pick.kind of the second tab, "New": what came in last to the server, any library. */
+    static final String NEW_KIND = "jfnew";
 
-    /** The tabs' kinds in order: Home, then one per library. */
+    /** The tabs' kinds in order: Home, New, then one per library. */
     static String[] tabKinds() {
-        String[] kinds = new String[TABS.length + 1];
+        String[] kinds = new String[TABS.length + 2];
         kinds[0] = HOME_KIND;
-        for (int i = 0; i < TABS.length; i++) kinds[i + 1] = tabKind(i);
+        kinds[1] = NEW_KIND;
+        for (int i = 0; i < TABS.length; i++) kinds[i + 2] = tabKind(i);
         return kinds;
     }
 
-    /** The tabs' names in order: Home, then the libraries as named in config.properties. */
+    /** The tabs' names in order: Home, New, then the libraries as named in config.properties. */
     static String[] tabTitles() {
-        String[] titles = new String[TABS.length + 1];
+        String[] titles = new String[TABS.length + 2];
         titles[0] = Ui.tr("tab|Home");
-        System.arraycopy(TABS, 0, titles, 1, TABS.length);
+        titles[1] = Ui.tr("tab|New");
+        System.arraycopy(TABS, 0, titles, 2, TABS.length);
         return titles;
     }
 
@@ -112,6 +116,10 @@ final class Jellyfin {
         add(home, items("/Users/" + user + "/Items/Resume?MediaTypes=Video&Limit=30" + FIELDS, token), HOME_KIND, null, max, seenHome);
         add(home, items("/Shows/NextUp?UserId=" + user + "&Limit=20" + FIELDS, token), HOME_KIND, Ui.tr("Next episode"), max, seenHome);
         out.addAll(home);
+        // New: the latest added to the server, any library (shows come as the show, not each episode).
+        List<Recs.Pick> latest = new ArrayList<>();
+        add(latest, new JSONArray(request("/Users/" + user + "/Items/Latest?Limit=20" + FIELDS, null, token)), NEW_KIND, null, max, new HashSet<>());
+        out.addAll(latest);
         JSONArray views = new JSONObject(request("/Users/" + user + "/Views", null, token)).getJSONArray("Items");
         for (int t = 0; t < TABS.length; t++) {
             String library = null;

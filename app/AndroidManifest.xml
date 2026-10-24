@@ -8,7 +8,7 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- After the TV boots (and after a TV update), checks that Free My TV mode is still as you left it. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <!-- The sleep timer's minutes left over any app (SleepOverlay), when picked; allowed through ADB, as Android TV
+    <!-- The sleep timer's minutes left over any app (SleepOverlay), when picked, and the water reminder (Water); allowed through ADB, as Android TV
          has no screen for it. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -194,6 +194,10 @@
         <service
             android:name=".SleepOverlay"
             android:process=":sleep"
+            android:exported="false" />
+
+        <receiver
+            android:name=".Water"
             android:exported="false" />
 
         <receiver
