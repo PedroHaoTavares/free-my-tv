@@ -88,6 +88,7 @@ final class HomeApps {
      * (YouTube); empty = the art's colors as they are. Last, a visual size tweak for the logo. Edit freely.
      */
     private static final String[][] SHELF = {
+        {"jellyfin", "Jellyfin", "org.jellyfin.androidtv", "00A4DC", "", "1"},
         {"netflix", "Netflix", "com.netflix.ninja", "E50914", "", "1"},
         {"youtube", "YouTube", "com.google.android.youtube.tv", "FF0033", "play", "1"},
         {"youtube", "YouTube", "com.amazon.firetv.youtube", "FF0033", "play", "1"},
@@ -474,7 +475,9 @@ final class HomeApps {
                 intent = launchIntent(a.getPackageManager(), it.pkg);
                 plain = intent;
                 if (plain != null) plain.addFlags(Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
-                if (intent != null && it.uri != null) {
+                if (intent != null && Jellyfin.open(it.uri) != null) {
+                    intent = Jellyfin.open(it.uri);   // the item's page in the Jellyfin app, by its id
+                } else if (intent != null && it.uri != null) {
                     intent = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(it.uri)).addCategory(Intent.CATEGORY_BROWSABLE).setPackage(it.pkg);
                 }
                 break;

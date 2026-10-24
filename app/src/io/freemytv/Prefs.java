@@ -146,7 +146,15 @@ final class Prefs {
     static boolean photos() { return sp().getBoolean("photos", true); }
     static void setPhotos(boolean on) { put("photos", on); }
 
-    static boolean coin(int i) { return sp().getBoolean("coin" + i, true); }
+    static boolean coin(int i) { return sp().getBoolean("coin" + i, coinByDefault(i)); }
+
+    /** config.properties "coins" (BTC, ETH, SOL, USDT, comma separated): the ones on until changed on the TV. Empty = all. */
+    private static boolean coinByDefault(int i) {
+        String list = Config.COINS.trim().toUpperCase(java.util.Locale.ROOT);
+        if (list.isEmpty()) return true;
+        for (String s : list.split(",")) if (s.trim().equals(HomeData.COINS[i])) return true;
+        return false;
+    }
     static void setCoin(int i, boolean on) { put("coin" + i, on); }
 
     // MARK: - Shelf

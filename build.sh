@@ -60,11 +60,26 @@ final class Config {
     static final String CURRENCY = "$(prop currency USD)";
     static final String TEMPERATURE = "$(prop temperature auto)";
     static final String HIDE_SERVICES = "$(prop hide_services '')";
+    static final String COINS = "$(prop coins '')";
+    static final String JELLYFIN_URL = "$(prop jellyfin_url '')";
+    static final String JELLYFIN_USER = "$(prop jellyfin_user '')";
+    static final String JELLYFIN_PASSWORD = "$(prop jellyfin_password '')";
     static final boolean DISABLE_ASSISTANT = $ASSIST;
     static final boolean SHOW_CRYPTO = $CRYPTO;
     static final boolean HIDE_ANIMATION = $ANIMATION;
 }
 EOF
+
+# --- Network: plain http only to your own Jellyfin server (a LAN address), everything else stays https-only.
+# Generated (and kept out of git) so your server's address isn't in the code.
+JF_HOST="$(prop jellyfin_url '' | sed -n 's#^http://\([^/:]*\).*#\1#p')"
+{
+  echo '<?xml version="1.0" encoding="utf-8"?>'
+  echo '<network-security-config>'
+  echo '    <base-config cleartextTrafficPermitted="false" />'
+  [ -n "$JF_HOST" ] && echo "    <domain-config cleartextTrafficPermitted=\"true\"><domain includeSubdomains=\"false\">$JF_HOST</domain></domain-config>"
+  echo '</network-security-config>'
+} > app/res/xml/network_security_config.xml
 
 # --- Build
 "$BT/aapt2" compile --dir app/res -o out/res.zip

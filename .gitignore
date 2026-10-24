@@ -1,5 +1,6 @@
 # Your settings and signing key stay on your machine
 config.properties
+app/res/xml/network_security_config.xml
 *.keystore
 *.idsig
 

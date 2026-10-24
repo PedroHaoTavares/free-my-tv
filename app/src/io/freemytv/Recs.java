@@ -58,7 +58,7 @@ final class Recs {
     private static final String IMAGES = "https://image.tmdb.org/t/p/" + (Backdrop.W <= 1280 ? "w1280" : "original");
     /** TMDB's Animation genre (movies and shows: cartoons and anime), left out with hide_animation=true. */
     private static final int ANIMATION = 16;
-    private static final long LIST_EVERY = 6 * 3600_000L;
+    private static final long LIST_EVERY = 6 * 3600_000L, JELLYFIN_EVERY = 60_000L;
     /** Bump when what is saved for each title changes (the saved list is discarded and fetched again). */
     private static final int CACHE_VERSION = 4;
     private static final int MANHA = 0, TARDE = 1, NOITE = 2;
@@ -98,6 +98,7 @@ final class Recs {
         SERVICE_NAME.put("appletv", "Apple TV");
         SERVICE_NAME.put("hotstar", "JioHotstar");
         SERVICE_NAME.put("okko", "Okko");
+        SERVICE_NAME.put(Jellyfin.APP, "Jellyfin");
         SERVICE_NAME.put("crunchyroll", "Crunchyroll");
         SERVICE_NAME.put("oneplay", "Oneplay");
     }
@@ -149,7 +150,7 @@ final class Recs {
     void removeListener(Listener l) { listeners.remove(l); }
 
     static boolean hasKey(Context c) {
-        return !Config.TMDB_KEY.trim().isEmpty();
+        return !Config.TMDB_KEY.trim().isEmpty() || Jellyfin.on();
     }
 
     /** Last fetch, for the settings screen: {count, error, at}. Written by the home screen (another process). */
@@ -175,6 +176,7 @@ final class Recs {
 
     static String periodLabel() {
         int p = period(System.currentTimeMillis());
+        if (Jellyfin.on()) return Ui.tr("CONTINUE WATCHING");
         return p == MANHA ? Ui.tr("THIS MORNING") : p == TARDE ? Ui.tr("THIS AFTERNOON") : Ui.tr("TONIGHT");
     }
 
@@ -200,7 +202,8 @@ final class Recs {
                     && (!p.detailed || (p.pkg != null && have.computeIfAbsent(p.pkg, this::installed)))) list.add(p);   // app missing: skip
         }
         if (list.isEmpty()) return list;
-        long hour = System.currentTimeMillis() / 3600_000L;
+        // Jellyfin: the server's order (most recently watched first), no hourly rotation.
+        long hour = Jellyfin.on() ? 0 : System.currentTimeMillis() / 3600_000L;
         // Three per hour, never two from the same franchise ("Law & Order" and "Law & Order: Special…").
         List<Pick> out = new ArrayList<>();
         java.util.Set<String> seen = new java.util.HashSet<>();
@@ -260,10 +263,13 @@ final class Recs {
         long sinceFail = now - failedAt;    // negative = the clock went back: don't wait
         if (!newKey && failedAt != 0 && sinceFail >= 0 && sinceFail < 10 * 60_000L) return;
         int p = period(now);
-        boolean stale = newKey || p != period || now - listAt > LIST_EVERY || now < listAt || picks.isEmpty()
-                || !listLanguage.equals(Ui.language);
+        boolean stale = Jellyfin.on()
+                // Jellyfin: your own progress, so it's asked again every minute (back from an episode, it's up to date)
+                ? newKey || now - listAt > JELLYFIN_EVERY || now < listAt || !listLanguage.equals(Ui.language)
+                : newKey || p != period || now - listAt > LIST_EVERY || now < listAt || picks.isEmpty()
+                        || !listLanguage.equals(Ui.language);
         boolean missing = false;
-        for (Pick pick : wanted()) missing |= !pick.detailed || !hasImage(pick) || needsLink(pick);
+        for (Pick pick : wanted()) missing |= !pick.detailed || (pick.backdrop != null && !hasImage(pick)) || needsLink(pick);
         if (!stale && !missing) return;
         keyStamp = stamp;
         fetching = true;
@@ -392,6 +398,13 @@ final class Recs {
     // MARK: - TMDB
 
     private void fetchList(int p) throws Exception {
+        if (Jellyfin.on()) {
+            picks = Jellyfin.resume(context, 24);   // can be empty: nothing half watched, the clock shows instead
+            period = p;
+            listAt = System.currentTimeMillis();
+            listLanguage = Ui.language;
+            return;
+        }
         // None of the services we know is on the TV (or hide_services hides them all): no region would change that.
         boolean any = false;
         for (String[] s : SERVICES) any |= installed(s[2]);
@@ -614,6 +627,7 @@ final class Recs {
 
     private long sourceStamp() {
         long stamp = (Config.TMDB_KEY.hashCode() * 31L + REGION.hashCode()) * 31L + (Config.HIDE_ANIMATION ? 1 : 0);
+        if (Jellyfin.on()) return stamp * 31L + Jellyfin.stamp();
         for (String[] service : SERVICES) stamp = stamp * 31L + (installed(service[2]) ? service[2].hashCode() : 0);
         return stamp;
     }
@@ -718,7 +732,8 @@ final class Recs {
         //noinspection ResultOfMethodCallIgnored
         f.getParentFile().mkdirs();
         File part = new File(f.getPath() + ".part");
-        HttpURLConnection c = (HttpURLConnection) new URL(IMAGES + p.backdrop).openConnection();
+        HttpURLConnection c = p.backdrop.startsWith("jf-") ? Jellyfin.image(context, p.backdrop)
+                : (HttpURLConnection) new URL(IMAGES + p.backdrop).openConnection();
         c.setConnectTimeout(8000);
         c.setReadTimeout(20000);
         try (InputStream in = c.getInputStream(); FileOutputStream out = new FileOutputStream(part)) {

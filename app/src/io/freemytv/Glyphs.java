@@ -46,7 +46,17 @@ final class Glyphs {
             if (BITMAPS.indexOfKey(key) >= 0) return BITMAPS.get(key);
             Drawable d = context.getDrawable(IDS[slot]);
             Bitmap b = null;
-            if (d != null) {
+            if (slot == 3 && Config.CURRENCY.trim().equalsIgnoreCase("BRL")) {
+                // In reais, USDT is shown as what it stands for: the dollar, with a plain "$" instead of Tether's logo.
+                Bitmap full = Bitmap.createBitmap(frame, frame, Bitmap.Config.ARGB_8888);
+                Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+                p.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+                p.setTextSize(frame * 0.82f);
+                p.setTextAlign(Paint.Align.CENTER);
+                Paint.FontMetrics fm = p.getFontMetrics();
+                new Canvas(full).drawText("$", frame / 2f, frame / 2f - (fm.ascent + fm.descent) / 2, p);
+                b = trimSides(full).extractAlpha();
+            } else if (d != null) {
                 Bitmap full = Bitmap.createBitmap(frame, frame, Bitmap.Config.ARGB_8888);
                 d.setBounds(0, 0, frame, frame);
                 d.draw(new Canvas(full));
