@@ -33,6 +33,9 @@ public class HomeActivity extends Activity {
             setContentView(t);
             return;
         }
+        // TCL (Android 11) marks this window translucent although the theme is opaque: the app left with Home is then
+        // never stopped and stays drawn over the home screen. Say it's opaque outright.
+        if (android.os.Build.VERSION.SDK_INT >= 30) setTranslucent(false);
         Ui.init(this);
         home = new HomeView(this);
         setContentView(home);

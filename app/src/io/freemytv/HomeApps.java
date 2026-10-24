@@ -193,11 +193,15 @@ final class HomeApps {
         return null;
     }
 
-    /** The shelf's packages in order: the user's list (Settings > Shelf), or the built-in one. */
+    /** The shelf's packages in order: the user's list (Settings > Shelf), config.properties "shelf", or the built-in one. */
     static List<String> shelfPackages(Context c) {
         List<String> custom = Prefs.shelf();
         if (custom != null) return custom;
         List<String> out = new ArrayList<>();
+        if (!Config.SHELF.trim().isEmpty()) {
+            for (String pkg : Config.SHELF.split(",")) if (!pkg.trim().isEmpty()) out.add(pkg.trim());
+            return out;   // apps not on the TV are skipped when the shelf is built
+        }
         Set<String> keys = new HashSet<>();
         PackageManager pm = c.getPackageManager();
         for (String[] d : SHELF) {

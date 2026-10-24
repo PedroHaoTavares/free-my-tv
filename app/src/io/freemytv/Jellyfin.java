@@ -42,33 +42,98 @@ final class Jellyfin {
 
     /** For Recs' cache: a new server or user fetches again. */
     static long stamp() {
-        return (URL_BASE.hashCode() * 31L + Config.JELLYFIN_USER.trim().hashCode()) * 31L + Config.JELLYFIN_PASSWORD.hashCode();
+        return ((URL_BASE.hashCode() * 31L + Config.JELLYFIN_USER.trim().hashCode()) * 31L + Config.JELLYFIN_PASSWORD.hashCode()) * 31L
+                + Config.JELLYFIN_TABS.hashCode();
     }
 
-    /** What the user has half watched, newest first, one per show (the latest episode), up to `max`. */
-    static List<Recs.Pick> resume(Context c, int max) throws Exception {
-        JSONArray items;
+    /**
+     * The home screen tabs (config.properties "jellyfin_tabs": library names, comma separated, e.g. Filmes,Séries).
+     * Empty: the usual three tabs, all of "Continue watching".
+     */
+    static final String[] TABS = tabNames();
+
+    private static String[] tabNames() {
+        List<String> out = new ArrayList<>();
+        for (String s : Config.JELLYFIN_TABS.split(",")) if (!s.trim().isEmpty()) out.add(s.trim());
+        return out.toArray(new String[0]);
+    }
+
+    static boolean libraryTabs() {
+        return on() && TABS.length > 0;
+    }
+
+    /** Recs.Pick.kind of the items of library tab i. */
+    static String tabKind(int i) {
+        return "jf" + i;
+    }
+
+    /**
+     * Without tabs: what the user has half watched, newest first, one per show. With tabs, for each library: what's
+     * half watched, then the next episodes, then what's new, so no tab is ever empty. Up to `max` per tab.
+     */
+    static List<Recs.Pick> fetch(Context c, int max) throws Exception {
         try {
-            items = resumeItems(c, false);
+            return fetch(c, max, false);
         } catch (Unauthorized e) {
-            items = resumeItems(c, true);    // the saved token expired or was revoked: sign in again once
+            return fetch(c, max, true);    // the saved token expired or was revoked: sign in again once
         }
+    }
+
+    private static List<Recs.Pick> fetch(Context c, int max, boolean fresh) throws Exception {
+        String[] login = login(c, fresh);
+        String token = login[0], user = login[1];
         List<Recs.Pick> out = new ArrayList<>();
-        Set<String> shows = new HashSet<>();
-        for (int i = 0; i < items.length() && out.size() < max; i++) {
-            JSONObject o = items.getJSONObject(i);
-            String series = o.optString("SeriesName", "");
-            if (!series.isEmpty() && !shows.add(series)) continue;   // two half-watched episodes: the newest only
-            Recs.Pick p = pick(o);
-            if (p != null) out.add(p);
+        if (!libraryTabs()) {
+            add(out, items("/Users/" + user + "/Items/Resume?MediaTypes=Video&Limit=30" + FIELDS, token), null, null, max, new HashSet<>());
+            return out;
+        }
+        JSONArray views = new JSONObject(request("/Users/" + user + "/Views", null, token)).getJSONArray("Items");
+        for (int t = 0; t < TABS.length; t++) {
+            String library = null;
+            for (int i = 0; i < views.length() && library == null; i++) {
+                if (plain(views.getJSONObject(i).optString("Name")).equals(plain(TABS[t]))) library = views.getJSONObject(i).optString("Id");
+            }
+            if (library == null) {
+                AppLog.w("jellyfin: no library named " + TABS[t]);
+                continue;
+            }
+            String kind = tabKind(t);
+            Set<String> seen = new HashSet<>();
+            List<Recs.Pick> tab = new ArrayList<>();
+            add(tab, items("/Users/" + user + "/Items/Resume?MediaTypes=Video&Limit=30&ParentId=" + library + FIELDS, token), kind, null, max, seen);
+            add(tab, items("/Shows/NextUp?UserId=" + user + "&Limit=20&ParentId=" + library + FIELDS, token), kind, Ui.tr("Next episode"), max, seen);
+            add(tab, new JSONArray(request("/Users/" + user + "/Items/Latest?Limit=20&ParentId=" + library + FIELDS, null, token)),
+                    kind, Ui.tr("New"), max, seen);
+            out.addAll(tab);
         }
         return out;
     }
 
-    private static JSONArray resumeItems(Context c, boolean fresh) throws Exception {
-        String[] login = login(c, fresh);
-        return new JSONObject(request("/Users/" + login[1] + "/Items/Resume?MediaTypes=Video&Limit=30"
-                + "&Fields=Overview&EnableImageTypes=Backdrop,Thumb", null, login[0])).getJSONArray("Items");
+    private static final String FIELDS = "&Fields=Overview&EnableImageTypes=Backdrop,Thumb";
+
+    private static JSONArray items(String path, String token) throws Exception {
+        return new JSONObject(request(path, null, token)).getJSONArray("Items");
+    }
+
+    /** Adds the items as picks (one per show), labeled with `tag` ("New"…) when given, up to `max` in `to`. */
+    private static void add(List<Recs.Pick> to, JSONArray items, String kind, String tag, int max, Set<String> seen) {
+        for (int i = 0; i < items.length() && to.size() < max; i++) {
+            JSONObject o = items.optJSONObject(i);
+            if (o == null) continue;
+            String show = o.optString("SeriesName", o.optString("Name", ""));
+            if (!seen.add(show)) continue;   // two episodes of one show: the first (newest) only
+            Recs.Pick p = pick(o);
+            if (p == null) continue;
+            if (kind != null) p.kind = kind;
+            if (tag != null) p.meta = p.meta.isEmpty() ? tag : tag + " · " + p.meta;
+            to.add(p);
+        }
+    }
+
+    /** "Séries" and "series" are the same library name. */
+    private static String plain(String s) {
+        return java.text.Normalizer.normalize(s.trim(), java.text.Normalizer.Form.NFD).replaceAll("\\p{M}", "")
+                .toLowerCase(java.util.Locale.ROOT);
     }
 
     private static Recs.Pick pick(JSONObject o) {

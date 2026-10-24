@@ -61,9 +61,11 @@ final class Config {
     static final String TEMPERATURE = "$(prop temperature auto)";
     static final String HIDE_SERVICES = "$(prop hide_services '')";
     static final String COINS = "$(prop coins '')";
+    static final String SHELF = "$(prop shelf '')";
     static final String JELLYFIN_URL = "$(prop jellyfin_url '')";
     static final String JELLYFIN_USER = "$(prop jellyfin_user '')";
     static final String JELLYFIN_PASSWORD = "$(prop jellyfin_password '')";
+    static final String JELLYFIN_TABS = "$(prop jellyfin_tabs '')";
     static final boolean DISABLE_ASSISTANT = $ASSIST;
     static final boolean SHOW_CRYPTO = $CRYPTO;
     static final boolean HIDE_ANIMATION = $ANIMATION;

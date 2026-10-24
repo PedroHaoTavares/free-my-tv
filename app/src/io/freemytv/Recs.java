@@ -380,7 +380,9 @@ final class Recs {
     List<Pick> wanted() {
         List<Pick> out = new ArrayList<>();
         java.util.Set<String> seen = new java.util.HashSet<>();
-        for (String kind : new String[] {null, "movie", "tv"}) {
+        List<String> kinds = new ArrayList<>(Arrays.asList(null, "movie", "tv"));
+        for (int i = 0; i < Jellyfin.TABS.length && Jellyfin.libraryTabs(); i++) kinds.add(Jellyfin.tabKind(i));
+        for (String kind : kinds) {
             for (Pick p : now(kind)) if (seen.add(key(p))) out.add(p);
         }
         return out;
@@ -399,7 +401,7 @@ final class Recs {
 
     private void fetchList(int p) throws Exception {
         if (Jellyfin.on()) {
-            picks = Jellyfin.resume(context, 24);   // can be empty: nothing half watched, the clock shows instead
+            picks = Jellyfin.fetch(context, Jellyfin.libraryTabs() ? 8 : 24);   // can be empty: the clock shows instead
             period = p;
             listAt = System.currentTimeMillis();
             listLanguage = Ui.language;
@@ -773,7 +775,7 @@ final class Recs {
             if (forLight != light) return;   // the design changed midway: this one is stale
             synchronized (images) {
                 images.put(p.backdrop, backdrop);
-                while (images.size() > (forLight ? 10 : 4)) images.remove(images.keySet().iterator().next());
+                while (images.size() > (forLight ? Math.max(10, 3 * Jellyfin.TABS.length + 1) : 4)) images.remove(images.keySet().iterator().next());
             }
             notifyListeners();
         } catch (IOException | RuntimeException | OutOfMemoryError e) {
