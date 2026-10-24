@@ -197,6 +197,7 @@
  "quotes|{ago}": "de {ago}",
  "shelf|Off": "Fora",
  "tab|All": "Tudo",
+ "tab|Home": "Início",
  "talkback|Sunrise {time}": "Nascer do sol {time}",
  "the TV asked for TLS (wireless debugging); use USB debugging": "a TV pediu TLS (depuração sem fio); use a depuração USB",
  "the TV rejected the app's key": "a TV recusou a chave do app",

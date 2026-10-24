@@ -67,6 +67,25 @@ final class Jellyfin {
         return "jf" + i;
     }
 
+    /** Recs.Pick.kind of the first tab, "Home": what you were watching last, in any library. */
+    static final String HOME_KIND = "jfhome";
+
+    /** The tabs' kinds in order: Home, then one per library. */
+    static String[] tabKinds() {
+        String[] kinds = new String[TABS.length + 1];
+        kinds[0] = HOME_KIND;
+        for (int i = 0; i < TABS.length; i++) kinds[i + 1] = tabKind(i);
+        return kinds;
+    }
+
+    /** The tabs' names in order: Home, then the libraries as named in config.properties. */
+    static String[] tabTitles() {
+        String[] titles = new String[TABS.length + 1];
+        titles[0] = Ui.tr("tab|Home");
+        System.arraycopy(TABS, 0, titles, 1, TABS.length);
+        return titles;
+    }
+
     /**
      * Without tabs: what the user has half watched, newest first, one per show. With tabs, for each library: what's
      * half watched, then the next episodes, then what's new, so no tab is ever empty. Up to `max` per tab.
@@ -87,6 +106,12 @@ final class Jellyfin {
             add(out, items("/Users/" + user + "/Items/Resume?MediaTypes=Video&Limit=30" + FIELDS, token), null, null, max, new HashSet<>());
             return out;
         }
+        // Home: the latest you were watching, any library (newest first), then the next episodes.
+        Set<String> seenHome = new HashSet<>();
+        List<Recs.Pick> home = new ArrayList<>();
+        add(home, items("/Users/" + user + "/Items/Resume?MediaTypes=Video&Limit=30" + FIELDS, token), HOME_KIND, null, max, seenHome);
+        add(home, items("/Shows/NextUp?UserId=" + user + "&Limit=20" + FIELDS, token), HOME_KIND, Ui.tr("Next episode"), max, seenHome);
+        out.addAll(home);
         JSONArray views = new JSONObject(request("/Users/" + user + "/Views", null, token)).getJSONArray("Items");
         for (int t = 0; t < TABS.length; t++) {
             String library = null;
@@ -109,7 +134,7 @@ final class Jellyfin {
         return out;
     }
 
-    private static final String FIELDS = "&Fields=Overview&EnableImageTypes=Backdrop,Thumb";
+    private static final String FIELDS = "&Fields=Overview&EnableImageTypes=Backdrop,Thumb,Primary";
 
     private static JSONArray items(String path, String token) throws Exception {
         return new JSONObject(request(path, null, token)).getJSONArray("Items");
@@ -159,6 +184,10 @@ final class Jellyfin {
             imageType = "Thumb";
         }
         p.backdrop = imageItem == null ? null : "jf-" + imageItem + "-" + imageType;
+        // The tall cards: the show's poster for an episode, else the item's own.
+        JSONObject tags = o.optJSONObject("ImageTags");
+        if (episode && o.has("SeriesPrimaryImageTag") && !o.optString("SeriesId").isEmpty()) p.poster = "jf-" + o.optString("SeriesId") + "-Primary";
+        else if (!episode && tags != null && tags.has("Primary")) p.poster = "jf-" + id + "-Primary";
         // "S7:E1 · The episode's name · 38 min left"
         StringBuilder meta = new StringBuilder();
         if (episode) {
@@ -180,10 +209,11 @@ final class Jellyfin {
         return p;
     }
 
-    /** The image to download for a backdrop key from pick(), sized for the UI. */
-    static String imageUrl(String backdrop) {
-        String[] parts = backdrop.split("-");   // "jf", item id, type
-        return URL_BASE + "/Items/" + parts[1] + "/Images/" + parts[2] + "?maxWidth=" + Backdrop.W + "&quality=90";
+    /** The image to download for an image key from pick() (backdrop or poster), sized for the UI. */
+    static String imageUrl(String image) {
+        String[] parts = image.split("-");   // "jf", item id, type
+        String size = parts[2].equals("Primary") ? "?maxHeight=" + 2 * Backdrop.TALL_H : "?maxWidth=" + Backdrop.W;
+        return URL_BASE + "/Items/" + parts[1] + "/Images/" + parts[2] + size + "&quality=90";
     }
 
     /** Opens the item's page in the Jellyfin app, or null if the link isn't a Jellyfin one. */

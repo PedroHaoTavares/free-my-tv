@@ -46,6 +46,7 @@ final class Recs {
         int id;
         String kind;            // "movie" or "tv"
         String title, backdrop, meta = "", app, pkg;
+        String poster;          // a portrait image for the tall cards (Jellyfin), or null: the photo's middle
         String link;            // opens the title in its app (looked up with Watchmode), or null: the app's home
         boolean detailed;
         java.io.File photo;     // one of your own photos (Photos): no title, no caption
@@ -60,7 +61,7 @@ final class Recs {
     private static final int ANIMATION = 16;
     private static final long LIST_EVERY = 6 * 3600_000L, JELLYFIN_EVERY = 60_000L;
     /** Bump when what is saved for each title changes (the saved list is discarded and fetched again). */
-    private static final int CACHE_VERSION = 4;
+    private static final int CACHE_VERSION = 5;
     private static final int MANHA = 0, TARDE = 1, NOITE = 2;
     /** Service name on TMDB (part of the name, lowercase) → TV app (HomeApps key, package). */
     private static final String[][] SERVICES = {
@@ -381,7 +382,7 @@ final class Recs {
         List<Pick> out = new ArrayList<>();
         java.util.Set<String> seen = new java.util.HashSet<>();
         List<String> kinds = new ArrayList<>(Arrays.asList(null, "movie", "tv"));
-        for (int i = 0; i < Jellyfin.TABS.length && Jellyfin.libraryTabs(); i++) kinds.add(Jellyfin.tabKind(i));
+        if (Jellyfin.libraryTabs()) kinds.addAll(Arrays.asList(Jellyfin.tabKinds()));
         for (String kind : kinds) {
             for (Pick p : now(kind)) if (seen.add(key(p))) out.add(p);
         }
@@ -729,13 +730,21 @@ final class Recs {
     // MARK: - Images (TMDB originals on disk, up to 24 so the whole list fits; this hour's kept ready in memory)
 
     private void download(Pick p) throws IOException {
-        File f = imageFile(p);
+        fetch(p.backdrop, imageFile(p));
+        if (p.poster != null) fetch(p.poster, posterFile(p));
+    }
+
+    private File posterFile(Pick p) {
+        return new File(new File(context.getCacheDir(), "recs"), p.poster.replace("/", ""));
+    }
+
+    private void fetch(String image, File f) throws IOException {
         if (f.exists()) return;
         //noinspection ResultOfMethodCallIgnored
         f.getParentFile().mkdirs();
         File part = new File(f.getPath() + ".part");
-        HttpURLConnection c = p.backdrop.startsWith("jf-") ? Jellyfin.image(context, p.backdrop)
-                : (HttpURLConnection) new URL(IMAGES + p.backdrop).openConnection();
+        HttpURLConnection c = image.startsWith("jf-") ? Jellyfin.image(context, image)
+                : (HttpURLConnection) new URL(IMAGES + image).openConnection();
         c.setConnectTimeout(8000);
         c.setReadTimeout(20000);
         try (InputStream in = c.getInputStream(); FileOutputStream out = new FileOutputStream(part)) {
@@ -771,11 +780,22 @@ final class Recs {
             if (b == null) throw new IOException("unreadable image");
             AppLog.w("backdrop \u201c" + p.title + "\u201d: " + bounds.outWidth + "×" + bounds.outHeight + " → " + Backdrop.W + "×" + Backdrop.H);
             boolean forLight = light;
-            Backdrop backdrop = Backdrop.make(b, forLight);
+            Bitmap poster = null;
+            if (forLight && p.poster != null && posterFile(p).exists()) {
+                // Read at about twice the tall card's height (posters are often 3000 px tall): little memory, still sharp.
+                BitmapFactory.Options pb = new BitmapFactory.Options();
+                pb.inJustDecodeBounds = true;
+                BitmapFactory.decodeFile(posterFile(p).getPath(), pb);
+                BitmapFactory.Options po = new BitmapFactory.Options();
+                po.inSampleSize = 1;
+                while (pb.outHeight / (po.inSampleSize * 2) >= Backdrop.TALL_H) po.inSampleSize *= 2;
+                poster = BitmapFactory.decodeFile(posterFile(p).getPath(), po);
+            }
+            Backdrop backdrop = Backdrop.make(b, forLight, false, poster);
             if (forLight != light) return;   // the design changed midway: this one is stale
             synchronized (images) {
                 images.put(p.backdrop, backdrop);
-                while (images.size() > (forLight ? Math.max(10, 3 * Jellyfin.TABS.length + 1) : 4)) images.remove(images.keySet().iterator().next());
+                while (images.size() > (forLight ? Math.max(10, 3 * Jellyfin.tabKinds().length + 1) : 4)) images.remove(images.keySet().iterator().next());
             }
             notifyListeners();
         } catch (IOException | RuntimeException | OutOfMemoryError e) {
@@ -794,6 +814,9 @@ final class Recs {
         }
     }
 
+    /** Images kept on disk: TMDB's 24 picks, or Jellyfin's tabs with a backdrop and a poster each. */
+    private static final int KEEP_FILES = 72;
+
     private static void prune(File dir) {
         // A download cut off when the system stopped the app leaves its .part behind.
         long stale = System.currentTimeMillis() - 10 * 60_000L;
@@ -803,9 +826,9 @@ final class Recs {
             if (parts[i].lastModified() < stale) parts[i].delete();
         }
         File[] files = dir.listFiles((d, name) -> !name.endsWith(".part"));
-        if (files == null || files.length <= 24) return;
+        if (files == null || files.length <= KEEP_FILES) return;
         Arrays.sort(files, (a, b) -> Long.compare(a.lastModified(), b.lastModified()));
-        for (int i = 0; i < files.length - 24; i++) {
+        for (int i = 0; i < files.length - KEEP_FILES; i++) {
             //noinspection ResultOfMethodCallIgnored
             files[i].delete();
         }
@@ -819,7 +842,7 @@ final class Recs {
             for (Pick p : picks) {
                 a.put(new JSONObject().put("id", p.id).put("kind", p.kind).put("title", p.title).put("backdrop", p.backdrop).put("link", p.link == null ? "" : p.link)
                         .put("meta", p.meta).put("app", p.app == null ? "" : p.app).put("pkg", p.pkg == null ? "" : p.pkg)
-                        .put("detailed", p.detailed));
+                        .put("detailed", p.detailed).put("poster", p.poster == null ? "" : p.poster));
             }
             SharedPreferences.Editor e = cache.edit().putString("picks", a.toString()).putInt("period", period).putLong("listAt", listAt)
                     .putString("language", listLanguage)
@@ -848,6 +871,7 @@ final class Recs {
             p.app = o.optString("app").isEmpty() ? null : o.optString("app");
             p.pkg = o.optString("pkg").isEmpty() ? null : o.optString("pkg");
             p.detailed = o.optBoolean("detailed");
+            p.poster = o.optString("poster").isEmpty() ? null : o.optString("poster");
             out.add(p);
         }
         return out;

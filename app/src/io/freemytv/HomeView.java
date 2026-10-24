@@ -100,15 +100,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private static final int L_INK = 0xFF1D1D1F, L_DIM = 0xFF6E6E73, L_FAINT = 0xFF8E8E93;
     private static String[] tabs;
     private static int tabsGeneration = -1;
-    /** What each tab shows (Recs.Pick.kind): all, movies, shows; or, with jellyfin_tabs, one Jellyfin library each. */
+    /** What each tab shows (Recs.Pick.kind): all, movies, shows; or, with jellyfin_tabs, Home and one library each. */
     private static final String[] TAB_KIND = tabKinds();
     private static final int TABS = TAB_KIND.length;
 
     private static String[] tabKinds() {
-        if (!Jellyfin.libraryTabs()) return new String[] {null, "movie", "tv"};
-        String[] kinds = new String[Jellyfin.TABS.length];
-        for (int i = 0; i < kinds.length; i++) kinds[i] = Jellyfin.tabKind(i);
-        return kinds;
+        return Jellyfin.libraryTabs() ? Jellyfin.tabKinds() : new String[] {null, "movie", "tv"};
     }
     private static final int Z_TOP = 4, Z_CARDS = 5;
 
@@ -510,7 +507,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** The tab names, made again only when the language changes (they are drawn on every frame). */
     private static String[] tabs() {
         if (tabsGeneration != Ui.generation) {
-            tabs = Jellyfin.libraryTabs() ? Jellyfin.TABS.clone()
+            tabs = Jellyfin.libraryTabs() ? Jellyfin.tabTitles()
                     : new String[] {Jellyfin.on() ? Ui.tr("tab|All") : Ui.tr("Explore"), Ui.tr("Movies"), Ui.tr("Shows")};
             tabsGeneration = Ui.generation;
         }

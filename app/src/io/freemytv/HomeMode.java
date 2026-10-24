@@ -62,7 +62,7 @@ final class HomeMode {
      * your brand's, see the README). The TV's own home screen and screensaver are added at switch time.
      */
     static final String[] DEBLOAT = {
-        "com.google.android.play.games", "com.google.android.youtube.tvmusic",        // Play Games, YouTube Music
+        "com.google.android.play.games",                                              // Play Games (YouTube Music stays: it's on the shelf)
         // TCL
         "com.tcl.magiconnectfree", "com.tcl.miracast",                                // screen mirroring apps
         "com.tcl.waterfall.overseas", "com.tcl.channelplus",                          // TCL Channel and its Live TV
@@ -600,11 +600,17 @@ final class HomeMode {
                         order.add(pkg);
                     }
                 }
-                for (String pkg : sorted(wanted)) if (!order.contains(pkg)) order.add(pkg);
-                Set<String> disabled = new HashSet<>(stringList(s, "disabled"));
                 // Off before Free My TV: turned off again if a TV update brings one back, but never handed to
                 // Original to turn on.
                 List<String> keptOff = stringList(s, "keptOff");
+                // One taken off DEBLOAT since the switch (YouTube Music, here) isn't turned off again: the saved list
+                // only counts for what is still a target, or was off before Free My TV.
+                Set<String> still = new HashSet<>(targets(home, dream, s.optBoolean("setupHome", true)));
+                still.addAll(keptOff);
+                wanted.retainAll(still);
+                for (String pkg : sorted(wanted)) if (!order.contains(pkg)) order.add(pkg);
+                Set<String> disabled = new HashSet<>(stringList(s, "disabled"));
+                disabled.retainAll(still);
                 Set<String> candidates = new HashSet<>();
                 for (String pkg : wanted) {
                     if (present.contains(pkg) && !keptOff.contains(pkg) && mayTurnOff(pkg)) candidates.add(pkg);

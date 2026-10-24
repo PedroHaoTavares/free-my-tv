@@ -81,6 +81,11 @@ final class Backdrop {
      * right, so it still reads as your photo. The glass and the drawer stay as they are.
      */
     static Backdrop make(Bitmap src, boolean forLight, boolean own) {
+        return make(src, forLight, own, null);
+    }
+
+    /** `poster`: a portrait image for the tall cards (Jellyfin's posters) instead of the photo's middle; recycled here. */
+    static Backdrop make(Bitmap src, boolean forLight, boolean own, Bitmap poster) {
         // Cropped to 16:9 at the source's resolution first, then filtered down (no step over 2×).
         Bitmap crop = center(src, (float) W / H);
         if (crop != src) src.recycle();
@@ -94,7 +99,8 @@ final class Backdrop {
         Canvas c = new Canvas(out);
         if (forLight) {
             // Light design: everything comes from the photo without scrims.
-            Bitmap wide = card(out, WIDE_W, WIDE_H), tall = card(out, TALL_W, TALL_H);
+            Bitmap wide = card(out, WIDE_W, WIDE_H), tall = card(poster != null ? poster : out, TALL_W, TALL_H);
+            if (poster != null && !poster.isRecycled()) poster.recycle();
             int[] frost = reduce(out, FW, FH, 3, 3);
             int[] light = whiten(frost.clone(), 0.82f);
             int[] glass = reduce(out, GW, GH, 2, 2);

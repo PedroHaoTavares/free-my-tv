@@ -197,6 +197,7 @@
  "quotes|{ago}": "{ago}",
  "shelf|Off": "Off",
  "tab|All": "All",
+ "tab|Home": "Home",
  "talkback|Sunrise {time}": "Sunrise {time}",
  "the TV asked for TLS (wireless debugging); use USB debugging": "the TV asked for TLS (wireless debugging); use USB debugging",
  "the TV rejected the app's key": "the TV rejected the app's key",
