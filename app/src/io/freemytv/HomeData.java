@@ -23,6 +23,7 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.SimpleTimeZone;
 import java.util.TimeZone;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -35,7 +36,7 @@ import java.util.concurrent.Executors;
 final class HomeData {
     static final String[] COINS = {"BTC", "ETH", "SOL", "USDT"};
     static final String[] COIN_NAMES = {"Bitcoin", "Ethereum", "Solana", "Dollar"};
-    private static final String CURRENCY = Config.CURRENCY.trim().toUpperCase(Locale.ROOT);
+    private static final String CURRENCY = Place.currency();
     /** Binance has no pairs in some currencies (INR...) and then refuses the whole request: prices go in dollars instead. */
     private static volatile boolean inDollars;
 
@@ -43,8 +44,10 @@ final class HomeData {
     private static String quote() {
         return CURRENCY.equals("USD") || inDollars ? "USDT" : CURRENCY;
     }
-    private static final String WEATHER_QUERY = "&current=temperature_2m,weather_code,is_day&daily=temperature_2m_max,temperature_2m_min,sunrise,sunset"
-            + "&hourly=temperature_2m,weather_code,is_day&timezone=auto&forecast_days=2";
+    // Both forecasts in one answer, the next 48 hours and today plus 5 days: Home Settings → Forecast switches without
+    // asking again, and offline too.
+    private static final String WEATHER_QUERY = "&current=temperature_2m,weather_code,is_day&daily=temperature_2m_max,temperature_2m_min,sunrise,sunset,weather_code"
+            + "&hourly=temperature_2m,weather_code,is_day&timezone=auto&forecast_days=6&forecast_hours=48";
 
     private static String weatherPlace() {
         return Prefs.latitude() + "," + Prefs.longitude();
@@ -129,6 +132,11 @@ final class HomeData {
         final List<Double> hourTemp = new ArrayList<>();
         final List<Integer> hourCode = new ArrayList<>();
         final List<Boolean> hourDay = new ArrayList<>();
+        // The next 5 days (from tomorrow): noon of each day on the TV's clock, high, low and code.
+        final List<Long> days = new ArrayList<>();
+        final List<Double> dayMax = new ArrayList<>();
+        final List<Double> dayMin = new ArrayList<>();
+        final List<Integer> dayCode = new ArrayList<>();
     }
 
     private static HomeData instance;
@@ -166,7 +174,8 @@ final class HomeData {
             // The cached forecast is for the city it was fetched for; another city means fetch again.
             if (w != null && weatherPlace().equals(cache.getString("weatherPlace", ""))) {
                 weather = parseWeather(w);
-                weatherAt = cache.getLong("weatherAt", 0);
+                // Fetched with another query (an older version): shown, and fetched again now.
+                weatherAt = WEATHER_QUERY.equals(cache.getString("weatherQuery", "")) ? cache.getLong("weatherAt", 0) : 0;
                 weatherFor = weatherPlace();
             }
         } catch (Exception ignored) {}
@@ -215,7 +224,8 @@ final class HomeData {
                     weather = parseWeather(body);
                     weatherAt = System.currentTimeMillis();
                     weatherFor = place;
-                    cache.edit().putString("weather", body).putLong("weatherAt", weatherAt).putString("weatherPlace", place).apply();
+                    cache.edit().putString("weather", body).putLong("weatherAt", weatherAt).putString("weatherPlace", place)
+                            .putString("weatherQuery", WEATHER_QUERY).apply();
                     notifyListeners();
                 } catch (Exception e) {
                     weatherFailedAt = System.currentTimeMillis();
@@ -256,7 +266,10 @@ final class HomeData {
 
     private static Weather parseWeather(String body) throws Exception {
         JSONObject o = new JSONObject(body);
-        TimeZone zone = TimeZone.getTimeZone(o.optString("timezone", TimeZone.getDefault().getID()));
+        // Open-Meteo writes every time at the place's offset of now, even past a DST change (Berlin's sunrise after the
+        // change still reads 07:51 at GMT+2): read them at that offset, as LG and Samsung do, not by the zone's rules.
+        TimeZone zone = o.has("utc_offset_seconds") ? new SimpleTimeZone(o.getInt("utc_offset_seconds") * 1000, "GMT")
+                : TimeZone.getTimeZone(o.optString("timezone", TimeZone.getDefault().getID()));
         Weather w = new Weather();
         JSONObject current = o.getJSONObject("current");
         w.temp = current.getDouble("temperature_2m");
@@ -282,6 +295,18 @@ final class HomeData {
                 w.hourCode.add(codes.getInt(i));
                 w.hourDay.add(days == null || days.optInt(i, 1) == 1);
             }
+        }
+        JSONArray dates = daily.getJSONArray("time"), highs = daily.getJSONArray("temperature_2m_max"),
+                lows = daily.getJSONArray("temperature_2m_min"), codes = daily.optJSONArray("weather_code");
+        long now = System.currentTimeMillis();
+        for (int i = 0; codes != null && i < dates.length() && w.days.size() < 5; i++) {
+            String date = dates.getString(i);
+            // Only days that haven't started at the city: today, and past days in a forecast kept offline, are left out.
+            if (localTime(date + "T12:00", zone) - 12 * 3600_000L <= now) continue;
+            w.days.add(localTime(date + "T12:00", TimeZone.getDefault()));   // its noon on the TV's clock: named right anywhere
+            w.dayMax.add(highs.optDouble(i));
+            w.dayMin.add(lows.optDouble(i));
+            w.dayCode.add(codes.optInt(i, -1));
         }
         return w;
     }
@@ -338,12 +363,16 @@ final class HomeData {
      * Uses the last weather fetched (it moves ~1 min a day); without data, 6:00 and 18:00.
      */
     boolean isNight(long now) {
-        String theme = Prefs.theme();
+        return isNight(Prefs.theme(), now, weather.sunrise, weather.sunset);
+    }
+
+    /** The same from what it depends on (SleepOverlay gets these in its Intent). */
+    static boolean isNight(String theme, long now, long sunrise, long sunset) {
         if (theme.equals("dark")) return true;
         if (theme.equals("light")) return false;
         long t = Shaders.timeOfDay(now, 0);
-        long rise = Shaders.timeOfDay(weather.sunrise, 6 * 60 * 60_000L);
-        long set = Shaders.timeOfDay(weather.sunset, 18 * 60 * 60_000L);
+        long rise = Shaders.timeOfDay(sunrise, 6 * 60 * 60_000L);
+        long set = Shaders.timeOfDay(sunset, 18 * 60 * 60_000L);
         return t < rise || t >= set;
     }
 
@@ -446,7 +475,21 @@ final class HomeData {
     }
 
     static String hour(long at) {
-        return Ui.once("hour", at, () -> Ui.datePattern("format|h a").format(at));
+        return Ui.once(Prefs.clock24() ? "hour24" : "hour", at, () -> Ui.datePattern("format|h a").format(at));
+    }
+
+    /** "Seg", "Mon", "Lun", "Mo", "Пн": the short day of the week, capitalized and without the abbreviation's dot. */
+    static String weekday(long at) {
+        return Ui.once("weekday", at, () -> {
+            String s = Ui.datePattern("format|EEE").format(at);
+            if (s.endsWith(".")) s = s.substring(0, s.length() - 1);
+            return s.isEmpty() ? s : s.substring(0, 1).toUpperCase(Ui.locale()) + s.substring(1);
+        });
+    }
+
+    /** "Sunday", "domingo", "Sonntag": a day's full name, for TalkBack. */
+    static String weekdayName(long at) {
+        return Ui.once("weekdayName", at, () -> new SimpleDateFormat("EEEE", Ui.locale()).format(new java.util.Date(at)));
     }
 
     /** How long ago the data was fetched, if it's stale (no internet): "12 min ago". */

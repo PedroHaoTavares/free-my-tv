@@ -109,7 +109,8 @@ var TV = (function () {
   // Tizen 4 also lists Samsung's own pieces: the YouTube engine's hosts (cobalt-*: "App", "Youtube", "YoutubeTV"),
   // Bixby, search, previews, the weather and notification popups, Apple TV's stand-in and engine.
   // A 2020 TU8000 (Tizen 5.5) ships Prime Video as org.tizen.primevideo, next to a -dummy and a _companionapp.
-  var SAMSUNG_HIDDEN = new RegExp('^(org\\.volt\\.|org\\.tizen\\.(?!browser$|netflix|primevideo$)|org\\.tizen\\.netflixlowmem$|ise-|ug-|d75857a5-)' +
+  // A 2023 Q60C (Tizen 9 in Brazil) ships Globoplay as org.tizen.globoplayapp.
+  var SAMSUNG_HIDDEN = new RegExp('^(org\\.volt\\.|org\\.tizen\\.(?!browser$|netflix|primevideo$|globoplay)|org\\.tizen\\.netflixlowmem$|ise-|ug-|d75857a5-)' +
       '|[Ss]ervice$|[Dd]aemon|Preview$|syspopup|[Hh]elper$|AdPlayer|AdSuite|[Kk]eyboard|\\.OTApp$' +
       '|^com\\.samsung\\.(calendar-account-manager|tv\\.(cobalt-|aria-(dummy|engine)|airplay-app|ambient-support|' +
       'built-in-app-info-viewer|commonsearch|searchall|preview-|tv-scheduler|csfs|notification-app|mycontents|' +
@@ -141,7 +142,8 @@ var TV = (function () {
   var SAMSUNG_TITLES = {
     'NvZ26VG9Yw.HBOGOLAG': 'Max',
     'rJeHak5zRg.Spotify': 'Spotify',
-    'evKhCgZelL.AmazonIgnitionLauncher2': 'Prime Video'
+    'evKhCgZelL.AmazonIgnitionLauncher2': 'Prime Video',
+    'org.tizen.globoplayapp': 'Globoplay'
   };
 
   // Samsung's settings menu on Tizen 3, which answers no "settings" app control.
@@ -200,14 +202,19 @@ var TV = (function () {
     try {
       window.tizen.application.getAppsInfo(function (list) {
         var out = [];
+        // App ids named in shelf_apps stay even with show false, and are looked up when the list leaves them out:
+        // Moonlight, installed in Developer Mode on a 2023 Q60C (Tizen 9), never reached the shelf though Smart Hub
+        // lists it. Only whole ids, so a name in shelf_apps can't bring back the platform's hidden pieces.
+        var ids = ((window.CONFIG || {}).shelfApps || []).filter(function (w) { return w.indexOf('.') > 0; });
         for (var i = 0; i < list.length; i++) {
           var a = list[i];
-          if (!a.id || a.show === false || a.id === self || SAMSUNG_HIDDEN.test(a.id)) continue;
-          var icon = a.iconPath || '';
-          if (icon && icon.indexOf('://') < 0) icon = 'file://' + icon;
-          if (SAMSUNG_ICONS[a.id]) icon = SAMSUNG_ICONS[a.id];
-          out.push({id: a.id, title: SAMSUNG_TITLES[a.id] || a.name || a.id, icon: icon, color: ''});
+          if (!a.id || a.id === self || SAMSUNG_HIDDEN.test(a.id) || (a.show === false && ids.indexOf(a.id) < 0)) continue;
+          out.push(samsungApp(a));
         }
+        ids.forEach(function (id) {
+          if (out.some(function (x) { return x.id === id; })) return;
+          try { out.push(samsungApp(window.tizen.application.getAppInfo(id))); } catch (e) {}
+        });
         // The built-in Netflix stays only when the store's Netflix isn't installed.
         var store = out.some(function (x) { return /\.Netflix$/.test(x.id); });
         if (store) out = out.filter(function (x) { return x.id.indexOf('org.tizen.netflix') !== 0; });
@@ -218,6 +225,13 @@ var TV = (function () {
     } catch (e) {
       done([]);
     }
+  }
+
+  function samsungApp(a) {
+    var icon = a.iconPath || '';
+    if (icon && icon.indexOf('://') < 0) icon = 'file://' + icon;
+    if (SAMSUNG_ICONS[a.id]) icon = SAMSUNG_ICONS[a.id];
+    return {id: a.id, title: SAMSUNG_TITLES[a.id] || a.name || a.id, icon: icon, color: ''};
   }
 
   function samsungLaunch(id, done) {

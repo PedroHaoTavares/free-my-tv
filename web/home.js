@@ -257,12 +257,27 @@
 
   var apps = [], shelf = [], others = [], inputs = [];
 
+  /** shelf_apps in config.properties: the shelf in that order, by id or name (part of it). */
+  var WANTED = (CONFIG.shelfApps || []).map(function (s) { return s.toLowerCase(); });
+
   function pickShelf() {
+    if (WANTED.length && Prefs.shelfConfig() !== WANTED.join(',')) {
+      Prefs.set('shelf', null);
+      Prefs.set('shelfConfig', WANTED.join(','));
+    }
     var chosen = Prefs.shelf(), out = [];
     if (chosen) {
       for (var i = 0; i < chosen.length; i++) {
         for (var j = 0; j < apps.length; j++) if (apps[j].id === chosen[i]) out.push(apps[j]);
       }
+    } else if (WANTED.length) {
+      for (var w = 0; w < WANTED.length; w++) {
+        for (var k = 0; k < apps.length; k++) {
+          var id = apps[k].id.toLowerCase(), title = apps[k].title.toLowerCase();
+          if ((id.indexOf(WANTED[w]) >= 0 || title.indexOf(WANTED[w]) >= 0) && out.indexOf(apps[k]) < 0) { out.push(apps[k]); break; }
+        }
+      }
+      if (!out.length) out = apps.slice(0, FEW_APPS);
     } else {
       for (var s = 0; s < SHELF.length && out.length < FEW_APPS; s++) {
         for (var a = 0; a < apps.length; a++) {
@@ -297,6 +312,8 @@
     for (i = 0; i < list.length; i++) setClass(list[i], 'focus', st.zone === Z.CARDS && st.card === i);
     list = $('tiles').children;
     for (i = 0; i < list.length; i++) setClass(list[i], 'focus', st.zone === Z.SHELF && st.shelf === i);
+    setClass($('tiles'), 'on', st.zone === Z.SHELF);
+    setClass($('platter'), 'on', st.zone === Z.SHELF);
     revealShelf();
     list = document.querySelectorAll('#drawer .key');
     for (i = 0; i < list.length; i++) setClass(list[i], 'focus', st.zone === Z.DRAWER && st.drawer === i);
@@ -573,14 +590,17 @@
     el('div', 'cond', card, Data.condition(w.code, w.isDay));
     el('div', 'range', card, trf('H:{max}', {max: Data.degrees(w.max)}) + '   ' + trf('L:{min}', {min: Data.degrees(w.min)}));
     el('div', 'split', card);
-    var hours = el('div', 'hours', card), width = parseFloat(card.style.width) - 30 - 422, hw = width / 6;
-    for (var i = 0; i < w.hours.length && i < 6; i++) {
-      var h = el('div', 'hour', hours), x = w.hours[i];
+    // Home Settings → Forecast: the next 6 hours or the next 5 days (the hours until a forecast has days).
+    var days = Prefs.forecast() === 'days' && w.days && w.days.length > 0, list = days ? w.days : w.hours, n = days ? 5 : 6;
+    var hours = el('div', 'hours', card), width = parseFloat(card.style.width) - 30 - 422, hw = width / n;
+    for (var i = 0; list && i < list.length && i < n; i++) {
+      var h = el('div', 'hour', hours), x = list[i];
       h.style.left = (hw * i) + 'px';
       h.style.width = hw + 'px';
-      el('div', 't', h, Data.hour(x.at));
-      sym(Data.symbol(x.code, x.day), h);
-      el('div', 'd', h, Data.degrees(x.temp));
+      el('div', 't', h, days ? Data.weekday(x.at) : Data.hour(x.at));
+      sym(Data.symbol(x.code, days || x.day), h);
+      var t = el('div', 'd', h, Data.degrees(days ? x.max : x.temp));
+      if (days) el('span', 'low', t, Data.degrees(x.min));
     }
     var sun = el('div', 'sun', card);
     if (w.sunrise) { var a = el('span', '', sun); sym('sunrise', a); a.appendChild(document.createTextNode(trf('Sunrise {time}', {time: Data.time(w.sunrise)}))); }
@@ -666,6 +686,8 @@
         step: function (d) { cycle('theme', ['auto', 'light', 'dark'], theme, d); checkNight(); }},
       {label: tr('Weather widget'), toggle: Prefs.weather(),
         step: function () { Prefs.set('weather', !Prefs.weather()); renderPanels(); }},
+      {label: tr('Forecast'), value: Prefs.forecast() === 'days' ? tr('Next days') : tr('Next hours'),
+        step: function (d) { cycle('forecast', ['hours', 'days'], Prefs.forecast(), d); renderPanels(); }},
       {label: tr('Quotes widget'), toggle: Prefs.quotes(),
         step: function () { Prefs.set('quotes', !Prefs.quotes()); Data.settingsChanged(); }}
     ];

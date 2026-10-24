@@ -4,23 +4,31 @@
     python3 tools/homebrew_repo.py FreeMyTV-webos.ipk
 
 Run it at release time, on the exact .ipk uploaded to the GitHub release (built with `webos/build.py --generic`), and
-commit the JSON with the release: the Channel downloads `ipkUrl`, checks this SHA-256 and size, and installs it with
-the same Developer Mode installer webos/install.py uses. A JSON that no longer matches only fails the check.
-The manifest goes inline, so the TV never has to fetch it from github.com.
+commit what it writes with the release: the JSON and a copy of the .ipk in docs/webos/. The Channel downloads `ipkUrl`,
+checks this SHA-256 and size, and installs it with the same Developer Mode installer webos/install.py uses.
+
+Everything the TV fetches comes from freemytv.io. The Channel's service runs on the TV's own Node, whose HTTP parser
+takes at most 8 KB of headers, and GitHub's release download answers with a redirect carrying about 10 KB (most of it a
+Content-Security-Policy): the install stops at "Parse Error: Header overflow" (#234). GitHub Pages answers with under
+1 KB. The manifest goes inline, and full_description.html is what the Channel shows on the app's page.
 """
+import glob
 import hashlib
 import json
 import os
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUT = os.path.join(ROOT, 'docs', 'webos', 'apps.json')
+DIR = os.path.join(ROOT, 'docs', 'webos')
+OUT = os.path.join(DIR, 'apps.json')
+SITE = 'https://freemytv.io/webos/'
 ICON = 'https://freemytv.io/assets/icon-512.png'
 SOURCE = 'https://github.com/simbasjungles/free-my-tv'
 
 
-def write(sha256, size):
-    """The repository for the version in webos/appinfo.json, whose release .ipk has this SHA-256 and size."""
+def write(sha256, size, ipk):
+    """The repository for the version in webos/appinfo.json, whose .ipk (in docs/webos, named `ipk`) has this SHA-256
+    and size."""
     app = json.load(open(os.path.join(ROOT, 'webos', 'appinfo.json'), encoding='utf-8'))
     version = app['version']
     manifest = {
@@ -32,7 +40,7 @@ def write(sha256, size):
         'iconUri': ICON,
         'sourceUrl': SOURCE,
         'rootRequired': False,
-        'ipkUrl': f'{SOURCE}/releases/download/v{version}/FreeMyTV-webos.ipk',
+        'ipkUrl': SITE + ipk,
         'ipkHash': {'sha256': sha256},
         'ipkSize': size,
     }
@@ -44,10 +52,11 @@ def write(sha256, size):
             'iconUri': ICON,
             'shortDescription': manifest['appDescription'],
             'pool': 'main',
+            'fullDescriptionUrl': 'full_description.html',
             'manifest': manifest,
         }],
     }
-    os.makedirs(os.path.dirname(OUT), exist_ok=True)
+    os.makedirs(DIR, exist_ok=True)
     with open(OUT, 'w', encoding='utf-8') as f:
         json.dump(repo, f, indent=2)
         f.write('\n')
@@ -59,7 +68,15 @@ def main():
         print(__doc__.strip())
         return 2
     data = open(sys.argv[1], 'rb').read()
-    write(hashlib.sha256(data).hexdigest(), len(data))
+    version = json.load(open(os.path.join(ROOT, 'webos', 'appinfo.json'), encoding='utf-8'))['version']
+    ipk = f'FreeMyTV-webos-{version}.ipk'
+    # Only the current release is served: older copies go.
+    for old in glob.glob(os.path.join(DIR, 'FreeMyTV-webos-*.ipk')):
+        if os.path.basename(old) != ipk:
+            os.remove(old)
+    with open(os.path.join(DIR, ipk), 'wb') as f:
+        f.write(data)
+    write(hashlib.sha256(data).hexdigest(), len(data), ipk)
     return 0
 
 

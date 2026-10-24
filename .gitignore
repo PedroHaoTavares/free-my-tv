@@ -8,6 +8,7 @@ app/res/xml/network_security_config.xml
 out/
 *.apk
 *.ipk
+!docs/webos/FreeMyTV-webos-*.ipk
 *.wgt
 __pycache__/
 

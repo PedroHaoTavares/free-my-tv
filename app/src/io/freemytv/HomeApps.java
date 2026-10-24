@@ -85,7 +85,8 @@ final class HomeApps {
      * Apps on the home shelf, in this order, when installed (the first FEW_APPS): key, name, package, brand color (for
      * its logo on glass) and how to lift the logo from the app's TV art: "tint" = a white logo takes the art's
      * background color (Prime Video, Globoplay); "play" = the white triangle inside the red button stays white
-     * (YouTube); empty = the art's colors as they are. Last, a visual size tweak for the logo. Edit freely.
+     * (YouTube); "white" = only the white of the art, for a white logo over a busy gradient (Kinopoisk); empty = the
+     * art's colors as they are. Last, a visual size tweak for the logo. Edit freely.
      */
     private static final String[][] SHELF = {
         {"jellyfin", "Jellyfin", "org.jellyfin.androidtv", "00A4DC", "", "1"},
@@ -104,9 +105,16 @@ final class HomeApps {
         {"hulu", "Hulu", "com.hulu.livingroomplus", "1CE783", "", "1"},
         {"hulu", "Hulu", "com.hulu.plus", "1CE783", "", "1"},
         {"paramount", "Paramount+", "com.cbs.ott", "0064FF", "", "1"},
+        {"paramount", "Paramount+", "com.cbs.ca", "0064FF", "", "1"},          // Paramount+ outside the US (a Sony in the UK; Canada)
+        {"now", "NOW", "com.bskyb.nowtv.beta", "1B9C8E", "", "1"},              // UK: Sky's NOW
         {"peacock", "Peacock", "com.peacocktv.peacockandroid", "6E55DC", "", "1"},
         {"peacock", "Peacock", "com.peacock.peacockfiretv", "6E55DC", "", "1"},
         {"globoplay", "Globoplay", "com.globo.globotv", "FF5A1F", "tint", "1"},
+        {"kinopoisk", "Кинопоиск", "ru.kinopoisk.tv", "FF5500", "white", "1"},
+        {"okko", "Okko", "ru.more.play", "6D43FF", "", "1"},
+        {"premier", "Premier", "gpm.tnt_premier", "FF2D55", "", "1"},
+        {"amediateka", "Амедиатека", "ru.amediateka", "E31E24", "", "1"},
+        {"wink", "Wink", "ru.rt.video.app.tv", "FF5A1F", "", "1"},
         {"spotify", "Spotify", "com.spotify.tv.android", "1DB954", "", "1"},
     };
     /**
@@ -404,17 +412,66 @@ final class HomeApps {
         Collections.sort(out, (a, b) -> a.number.compareTo(b.number));
         // Allwinner's player opens only HDMI 1 (HY300: one port, though the board lists three)
         if (allwinnerInputs(c)) out.removeIf(it -> !"1".equals(it.number));
+        // MIUI TV knows three HDMI ports; a board reporting a fourth leaves it with no way to be opened (a Redmi TV
+        // lists HDMI 4 and answers no number for it), so it isn't shown.
+        else if (xiaomiInputs(c)) out.removeIf(it -> !xiaomiPort(it));
         return out;
     }
 
     /** Allwinner's live TV player (HY300 projectors), the stock home screen's way to HDMI: it ignores the input asked for. */
     private static final ComponentName ALLWINNER_TV = new ComponentName("com.softwinner.awlivetv", "com.softwinner.awlivetv.MainActivity");
+    /** Xiaomi's own source player (MIUI TV, the Chinese firmware): it takes the port as a number of its own. */
+    private static final ComponentName XIAOMI_SOURCES = new ComponentName("com.xiaomi.mitv.tvplayer", "com.xiaomi.mitv.tvplayer.ExternalSourceActivity");
+    private static final String XIAOMI_SOURCES_ACTION = "com.xiaomi.mitv.tvplayer.EXTSRC_PLAY";
+    /** MIUI TV's numbers for HDMI 1 to 3 (VGA is 0 and AV 2). A number it doesn't know drops the TV to no source at all. */
+    private static final int[] XIAOMI_HDMI = {23, 24, 25};
+
+    /** Whether the activity is really there: Intent.resolveActivity hands an explicit component back without looking. */
+    private static boolean exists(Context c, ComponentName component) {
+        return new Intent().setComponent(component).resolveActivityInfo(c.getPackageManager(), 0) != null;
+    }
+
+    /** No app opens a passthrough input, so only the maker's own player can reach the TV's inputs. */
+    private static boolean noPassthrough(Context c) {
+        Intent view = new Intent(Intent.ACTION_VIEW, TvContract.buildChannelUriForPassthroughInput("x"));
+        return view.resolveActivity(c.getPackageManager()) == null;
+    }
 
     /** No app opens a passthrough input, but Allwinner's player is there. */
     private static boolean allwinnerInputs(Context c) {
-        PackageManager pm = c.getPackageManager();
-        Intent view = new Intent(Intent.ACTION_VIEW, TvContract.buildChannelUriForPassthroughInput("x"));
-        return view.resolveActivity(pm) == null && new Intent().setComponent(ALLWINNER_TV).resolveActivity(pm) != null;
+        return noPassthrough(c) && exists(c, ALLWINNER_TV);
+    }
+
+    /** No app opens a passthrough input, but Xiaomi's source player is there (MIUI TV, a Redmi TV on Android 9 tested). */
+    private static boolean xiaomiInputs(Context c) {
+        return noPassthrough(c) && exists(c, XIAOMI_SOURCES);
+    }
+
+    /** The port's number, from the digit in its name, or 0 when it had none. */
+    private static int port(Item it) {
+        try {
+            return Integer.parseInt(it.number);
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    /** A port MIUI TV has a number for: the others can't be opened at all, so they aren't shown. */
+    private static boolean xiaomiPort(Item it) {
+        return port(it) >= 1 && port(it) <= XIAOMI_HDMI.length;
+    }
+
+    /**
+     * How to open an HDMI input: the standard passthrough request, or, where no app answers it, the maker's own
+     * player. Xiaomi's takes the port as its own "input" number.
+     */
+    private static Intent inputIntent(Context c, Item it) {
+        if (allwinnerInputs(c)) return new Intent().setComponent(ALLWINNER_TV);
+        if (xiaomiInputs(c) && xiaomiPort(it)) {
+            return new Intent(XIAOMI_SOURCES_ACTION).setComponent(XIAOMI_SOURCES)
+                    .putExtra("input", XIAOMI_HDMI[port(it) - 1]);
+        }
+        return new Intent(Intent.ACTION_VIEW, TvContract.buildChannelUriForPassthroughInput(it.inputId));
     }
 
     /** Words in a device's name, by the icon they pick: a game console, a streaming box, a sound system, a TV box. */
@@ -489,8 +546,7 @@ final class HomeApps {
                 intent = liveTv(a);
                 break;
             case INPUT:
-                intent = allwinnerInputs(a) ? new Intent().setComponent(ALLWINNER_TV)
-                        : new Intent(Intent.ACTION_VIEW, TvContract.buildChannelUriForPassthroughInput(it.inputId));
+                intent = inputIntent(a, it);
                 break;
             case SETTINGS:
                 intent = new Intent().setComponent(new ComponentName(a, SettingsActivity.class));
@@ -558,20 +614,29 @@ final class HomeApps {
     static String tunerInput(Context c) {
         TvInputManager tim = (TvInputManager) c.getSystemService(Context.TV_INPUT_SERVICE);
         if (tim == null) return null;
-        String system = null, fallback = null;
+        String hardware = null, system = null, fallback = null;
         try {
             for (TvInputInfo info : tim.getTvInputList()) {
                 if (info.getType() != TvInputInfo.TYPE_TUNER || info.isPassthroughInput()) continue;
                 if (info.getServiceInfo() != null && info.getServiceInfo().applicationInfo != null
                         && (info.getServiceInfo().applicationInfo.flags & android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0) {
-                    if (info.getId().contains("/HW")) return info.getId();
+                    // Several hardware tuners (MediaTek: Tuner, Cable, Analog): digital antenna first, analog last.
+                    // Haier H32S80EFX lists AnalogInputService/HW1 first, which opens on no channels in DVB-T2 countries.
+                    if (info.getId().contains("/HW") && (hardware == null || tunerRank(info.getId()) < tunerRank(hardware))) {
+                        hardware = info.getId();
+                    }
                     if (system == null) system = info.getId();
                 }
                 if (fallback == null) fallback = info.getId();
             }
         } catch (RuntimeException ignored) {
         }
-        return system != null ? system : fallback;
+        return hardware != null ? hardware : system != null ? system : fallback;
+    }
+
+    private static int tunerRank(String id) {
+        String s = id.toLowerCase(Locale.ROOT);
+        return s.contains("analog") ? 2 : s.contains("cable") ? 1 : 0;
     }
 
     static List<String[]> launchable(Context c) {
@@ -615,7 +680,7 @@ final class HomeApps {
             } else if (!extract) {
                 return null;
             } else {
-                logo = bannerLogo(c, pkg, mode.equals("tint"), mode.equals("play"));
+                logo = bannerLogo(c, pkg, mode.equals("tint"), mode.equals("play"), mode.equals("white"));
                 saveLogo(logo, file, none);
             }
         }
@@ -670,10 +735,11 @@ final class HomeApps {
     /**
      * Logo lifted from the app's TV art: the background is removed (estimated from the edges, gradients are fine), the
      * brand colors stay and black turns white (the card is dark). With `tint`, a white logo on a colored background
-     * takes the background's color; with `holes`, holes inside colored shapes (the play triangle) turn white. The
-     * edges are "decontaminated" (no halo from the background).
+     * takes the background's color; with `holes`, holes inside colored shapes (the play triangle) turn white; with
+     * `white`, only what is white is kept (anything colored or dark is background). The edges are "decontaminated" (no
+     * halo from the background).
      */
-    private static Bitmap bannerLogo(Context c, String pkg, boolean tint, boolean holes) {
+    private static Bitmap bannerLogo(Context c, String pkg, boolean tint, boolean holes, boolean white) {
         Drawable d = bannerDrawable(c, pkg);
         if (d == null) return null;
         final int w = 768, h = 432;
@@ -727,23 +793,31 @@ final class HomeApps {
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
                 int idx = y * w + x;
-                // Is there ink here (the old thresholds, on the nearby ink), and how much of this pixel it covers
-                // (its distance against that ink's): solid parts stay opaque, edges keep their anti-aliasing.
-                float gate = smoothstep(0.07f, 0.22f, near[idx]);
-                if (gate <= 0.004f) continue;
-                float a = gate * clamp((dist[idx] - 0.04f) / (0.85f * (near[idx] - 0.04f)));
-                if (a <= 0.004f) continue;
-                background(bg, x, y, w, h, top, bottom, left, right);
                 int p = px[idx];
                 col[0] = ((p >> 16) & 255) / 255f;
                 col[1] = ((p >> 8) & 255) / 255f;
                 col[2] = (p & 255) / 255f;
-                for (int i = 0; i < 3; i++) col[i] = clamp((col[i] - (1 - a) * bg[i]) / a);   // no background halo
-                float l = lum(col), s = sat(col);
-                if (bgLum > 0.6f && l < 0.42f && s < 0.3f) {
-                    col[0] = col[1] = col[2] = 1f;                  // black text on a light background → white
-                } else if (tint && bgLum <= 0.6f && bgLum > 0.1f && bgSat > 0.35f && l > 0.7f && s < 0.25f) {
-                    vivid(bg, col);                                 // white logo on brand color → that color, vivid
+                float a;
+                if (white) {
+                    // Only what is white is ink: on a busy gradient the distance from the background says nothing.
+                    a = smoothstep(0.55f, 0.85f, lum(col)) * (1 - smoothstep(0.12f, 0.3f, sat(col)));
+                    if (a <= 0.004f) continue;
+                    col[0] = col[1] = col[2] = 1f;
+                } else {
+                    // Is there ink here (the old thresholds, on the nearby ink), and how much of this pixel it covers
+                    // (its distance against that ink's): solid parts stay opaque, edges keep their anti-aliasing.
+                    float gate = smoothstep(0.07f, 0.22f, near[idx]);
+                    if (gate <= 0.004f) continue;
+                    a = gate * clamp((dist[idx] - 0.04f) / (0.85f * (near[idx] - 0.04f)));
+                    if (a <= 0.004f) continue;
+                    background(bg, x, y, w, h, top, bottom, left, right);
+                    for (int i = 0; i < 3; i++) col[i] = clamp((col[i] - (1 - a) * bg[i]) / a);   // no background halo
+                    float l = lum(col), s = sat(col);
+                    if (bgLum > 0.6f && l < 0.42f && s < 0.3f) {
+                        col[0] = col[1] = col[2] = 1f;                  // black text on a light background → white
+                    } else if (tint && bgLum <= 0.6f && bgLum > 0.1f && bgSat > 0.35f && l > 0.7f && s < 0.25f) {
+                        vivid(bg, col);                                 // white logo on brand color → that color, vivid
+                    }
                 }
                 out[idx] = (Math.round(a * 255) << 24) | (Math.round(col[0] * 255) << 16) | (Math.round(col[1] * 255) << 8) | Math.round(col[2] * 255);
                 if (a > 0.5f) opaque++;

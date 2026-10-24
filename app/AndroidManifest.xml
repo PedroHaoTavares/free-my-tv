@@ -1,13 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="io.freemytv"
-    android:versionCode="2"
-    android:versionName="1.1">
+    android:versionCode="3"
+    android:versionName="1.2">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- After the TV boots (and after a TV update), checks that Free My TV mode is still as you left it. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- The sleep timer's minutes left over any app (SleepOverlay), when picked; allowed through ADB, as Android TV
+         has no screen for it. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- The sleep timer on time: from Android 12, windows under 10 minutes stretch to 10. No prompt for either. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 
     <!-- Android 11+: without this list the app can't "see" the other apps (getLeanbackLaunchIntentForPackage
          returns null). The shelf and streaming apps, the live TV apps and, through the <intent>, every TV app
@@ -28,6 +35,8 @@
         <package android:name="com.hulu.livingroomplus" />
         <package android:name="com.hulu.plus" />
         <package android:name="com.cbs.ott" />
+        <package android:name="com.cbs.ca" />
+        <package android:name="com.bskyb.nowtv.beta" />
         <package android:name="com.peacocktv.peacockandroid" />
         <package android:name="com.peacock.peacockfiretv" />
         <package android:name="com.globo.globotv" />
@@ -36,10 +45,11 @@
         <package android:name="com.google.android.tv" />
         <package android:name="com.mediatek.wwtv.tvcenter" />
         <package android:name="com.sony.dtv.tvx" />
-        <!-- HY300 projectors: keystone and Miracast (drawer shortcuts), Allwinner's player for HDMI -->
+        <!-- HY300 projectors: keystone and Miracast (drawer shortcuts), Allwinner's player for HDMI; MIUI TV's source player -->
         <package android:name="com.htc.htcsettings" />
         <package android:name="com.softwinner.miracastReceiver" />
         <package android:name="com.softwinner.awlivetv" />
+        <package android:name="com.xiaomi.mitv.tvplayer" />
         <package android:name="com.amazon.tv.livetv" />
         <package android:name="com.amazon.mediatek.livetv" />
         <intent>
@@ -137,7 +147,7 @@
             </intent-filter>
         </service>
 
-        <!-- The same screensaver on Android 11, in the main process (see ScreensaverAlone). -->
+        <!-- The same screensaver on Android 11 to 12L, in the main process (see ScreensaverAlone). -->
         <service
             android:name=".ScreensaverAlone"
             android:enabled="@bool/dream_alone"
@@ -178,6 +188,13 @@
             android:name=".PhotoInbox"
             android:authorities="io.freemytv.photos"
             android:exported="true" />
+
+        <!-- The sleep timer's minutes left over any app, while the timer runs. A process of its own: a foreground
+             service in :home would keep the whole home screen in memory under the app in front. -->
+        <service
+            android:name=".SleepOverlay"
+            android:process=":sleep"
+            android:exported="false" />
 
         <receiver
             android:name=".HomeReceiver"

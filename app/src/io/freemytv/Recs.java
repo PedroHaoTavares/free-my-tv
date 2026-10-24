@@ -73,6 +73,7 @@ final class Recs {
         {"hulu", "hulu", "com.hulu.livingroomplus"},
         {"hulu", "hulu", "com.hulu.plus"},
         {"paramount", "paramount", "com.cbs.ott"},
+        {"paramount", "paramount", "com.cbs.ca"},      // Paramount+ outside the US (a Sony in the UK; Canada)
         {"peacock", "peacock", "com.peacocktv.peacockandroid"},
         {"peacock", "peacock", "com.peacock.peacockfiretv"},
         {"globoplay", "globoplay", "com.globo.globotv"},
@@ -82,9 +83,15 @@ final class Recs {
         {"apple tv", "appletv", "com.apple.atve.sony.appletv"},   // Sony's own build
         {"apple tv", "appletv", "com.apple.atve.amazon.appletv"},
         {"hotstar", "hotstar", "in.startv.hotstar"},   // TMDB: "JioHotstar" (earlier "Disney Plus Hotstar")
-        {"okko", "okko", "ru.more.play"},
         {"crunchyroll", "crunchyroll", "com.crunchyroll.crunchyroid"},
+        {"now tv", "now", "com.bskyb.nowtv.beta"},     // UK: Sky's NOW (TMDB: "Now TV", "Now TV Cinema")
         {"oneplay", "oneplay", "net.cme.voyo.cz.tvapp"},    // Czechia: Voyo and O2 TV became Oneplay, same app
+        // Russia (TMDB's watch providers for RU)
+        {"okko", "okko", "ru.more.play"},
+        {"kinopoisk", "kinopoisk", "ru.kinopoisk.tv"},
+        {"premier", "premier", "gpm.tnt_premier"},
+        {"amediateka", "amediateka", "ru.amediateka"},
+        {"more tv", "wink", "ru.rt.video.app.tv"},   // TMDB: "More TV" (more.tv is part of Rostelecom's Wink now)
     };
     private static final Map<String, String> SERVICE_NAME = new HashMap<>();
     static {
@@ -101,10 +108,15 @@ final class Recs {
         SERVICE_NAME.put("okko", "Okko");
         SERVICE_NAME.put(Jellyfin.APP, "Jellyfin");
         SERVICE_NAME.put("crunchyroll", "Crunchyroll");
+        SERVICE_NAME.put("now", "NOW");
         SERVICE_NAME.put("oneplay", "Oneplay");
+        SERVICE_NAME.put("kinopoisk", "Кинопоиск");
+        SERVICE_NAME.put("premier", "Premier");
+        SERVICE_NAME.put("amediateka", "Амедиатека");
+        SERVICE_NAME.put("wink", "Wink");
     }
     /** Country for "what streams where" (config.properties "tmdb_region", e.g. US, GB, BR). */
-    static final String REGION = Config.TMDB_REGION.trim().toUpperCase(Locale.ROOT);
+    static final String REGION = Place.region();
     /** The errors the settings say in words: TMDB lists none of the TV's apps in REGION, or the TV has none we know. */
     static final String NO_APPS = "none of the TV's streaming services are on TMDB";
     static final String NO_KNOWN_APPS = "none of the TV's streaming apps can give picks";

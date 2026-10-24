@@ -53,7 +53,7 @@ import java.util.function.Consumer;
  *    (Photos) the same way, or else a light gradient;
  *  - at the bottom, the glass shelf with the apps (icons in each brand's color, like the tvOS Dock; the focused one
  *    grows);
- *  - ↓ on the shelf: everything moves up and the bottom drawer appears (inputs, shortcuts, weather for the next hours
+ *  - ↓ on the shelf: everything moves up and the bottom drawer appears (inputs, shortcuts, weather for the next hours or days
  *    and quotes with the 24 h change); the background lightens (darkens at night). ↑ or Back closes it;
  *  - from sunset to sunrise, a night look: dark background, smoked glass and white text.
  * Measurements are in a 1920×1080 space (k = width / 1920). The screen is split into layers so the TV's weak GPU only
@@ -244,6 +244,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private int w, h;
     private float k = 1;
     private String clockText = "", dateText = "", weatherLine = "";
+    /** "Off in 42 min" next to the round buttons while the sleep timer runs (Settings > Sleep Timer); "" otherwise. */
+    private String sleepText = "";
     private long weatherLineAt = -1;
     private int weatherLinePrefs = -1;
     private String weatherLineLanguage = "";
@@ -251,7 +253,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private boolean okDown, backDown;
 
     private Paint labelPaint, metaPaint, clockPaint, buttonPaint, capsuleText, tipPaint, quotePaint, staleQuote;
-    private Paint rowTitle, drawerLabel, cardTitle, cardText, cardDim, cardDimRight, bigTemp, hourPaint, hourTemp;
+    private Paint rowTitle, drawerLabel, cardTitle, cardText, cardDim, cardDimRight, bigTemp, hourPaint, hourTemp, dayLow;
     private Paint pricePaint, changePaint, sheetTitle;
     private TextPaint titlePaint, gridLabel, toastPaint;
     private final Paint bitmapPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
@@ -282,9 +284,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private HomeData.Weather textWeather;
     private long textPricesAt = -1, textMinute = -1;
     private int textPrefs = -1;
+    private boolean clock24;
     private String textLanguage;
     private String weatherTitle, nowTemp, highLow, sunriseText, sunsetText, staleText;
     private final String[] hourText = new String[6], hourTempText = new String[6];
+    private final String[] dayText = new String[5], dayMaxText = new String[5], dayMinText = new String[5];
+    private boolean textDays;   // the weather card shows the next days (Home Settings → Forecast) and has them
     private final String[] priceText = new String[HomeData.COINS.length], changeText = new String[HomeData.COINS.length];
 
     /** What the hero shows: a recommendation or, without any, the date, the time and the weather. */
@@ -358,6 +363,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             updatePalette();
             checkNight(true);
             updatePicks();      // three new ones every hour
+            updateSleep();
             handler.postDelayed(this, 15_000);
         }
     };
@@ -419,6 +425,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (running) return;
         running = true;
         checkNight(false);
+        boolean h24 = Prefs.clock24();
+        if (h24 != clock24) {   // 12/24 hours changed in the TV's settings: the clock and the drawer's times again
+            clock24 = h24;
+            clockMinute = -1;
+            textPrefs = -1;
+        }
         long now = SystemClock.uptimeMillis();
         // Some remotes (Xiaomi's) send one Home press as a burst of 5 to 8, and each one pauses and resumes the home
         // screen: those after the first change nothing, so the lists are read only once.
@@ -437,7 +449,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (!again) reload();
         updatePalette();
         updatePicks();
-        if (sheetOpen) closeSheet();
+        updateSleep();      // a timer just set in Settings shows at once, not at the next tick
+        if (allAppsOnResume) {
+            allAppsOnResume = false;
+            reset(false);
+            openSheet();
+        } else if (sheetOpen) {
+            closeSheet();
+        }
         sheet.snap(sheet.target);
         motionDirty = true;
         invalidateAll();
@@ -584,6 +603,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         clockMinute = -1;
         updateClock();
         Symbols.warm(getContext(), "bell", 26 * k);
+        Symbols.warm(getContext(), "bedtime", 21 * k);   // the sleep timer's "Off in", at lQuote's size
         layoutShelf();
         layoutStatus();
         layoutDrawer();
@@ -644,6 +664,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         hourPaint.setTextAlign(Paint.Align.CENTER);
         hourTemp = Ui.numbers(Ui.medium, 26 * k, 0xF2FFFFFF);
         hourTemp.setTextAlign(Paint.Align.CENTER);
+        dayLow = Ui.numbers(Ui.medium, 22 * k, 0xADFFFFFF);
+        dayLow.setTextAlign(Paint.Align.CENTER);
         pricePaint = Ui.numbers(Ui.medium, 26 * k, 0xF2FFFFFF);
         pricePaint.setTextAlign(Paint.Align.RIGHT);
         changePaint = Ui.numbers(Ui.semibold, 21 * k, 0xFFFFFFFF);
@@ -759,6 +781,15 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         v.setAlpha(alpha);
         v.setTranslationY(translationY);
         v.setVisibility(alpha > 0.002f ? VISIBLE : INVISIBLE);
+    }
+
+    private void updateSleep() {
+        boolean here = Prefs.sleepShown() && !android.provider.Settings.canDrawOverlays(getContext());   // else SleepOverlay
+        int left = here ? SleepTimer.minutesLeft(getContext()) : 0;
+        String text = left == 0 ? "" : Ui.trf("Off in {time}", "time", SleepTimer.duration(left));
+        if (text.equals(sleepText)) return;
+        sleepText = text;
+        statusDirty = true;
     }
 
     private boolean updateClock() {
@@ -1296,6 +1327,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         else c.drawText(stale, right - total - 24 * k, base, staleQuote);
     }
 
+    /** 0 to 1: how much the shelf has the focus (drawTiles works it out, drawShelfTile shades the other tiles by it). */
+    private float shelfOn;
+
     private void drawTiles(Canvas c) {
         // The focused one last: it grows over its neighbors without being covered by them.
         int top = -1;
@@ -1307,6 +1341,22 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             }
         }
         if (liftIndex >= 0 && liftIndex < shelf.size() && moveLift.value > 0.02f) top = liftIndex;
+        // How much the shelf has the focus: the focus springs add up to about 1 while it moves from tile to tile, so the
+        // other tiles' shade doesn't flicker and fades as the focus leaves the shelf.
+        float on = 0;
+        for (int i = 0; i < shelf.size(); i++) on += Math.max(0, tileFocus[i].value);
+        shelfOn = Math.min(1, on);
+        // The whole shelf shows it has the focus too: a rim just outside its glass (dark by day: white wouldn't show on
+        // white glass). Here and not on the glass's layer, which only changes with the background.
+        if (shelfOn > 0.01f && !shelf.isEmpty()) {
+            float out = 6 * k, radius = (TILE_RADIUS + SHELF_PAD) * k + out;
+            tmp.set(platterRect.left - out, platterRect.top - out, platterRect.right + out, platterRect.bottom + out);
+            rim.setShader(null);
+            rim.setColor(Ui.alpha(tone(0xFF3A3A3C, 0xFFFFFFFF), tone(0.45f, 0.8f) * shelfOn));
+            rim.setStrokeWidth(3 * k);
+            c.drawRoundRect(tmp, radius, radius, rim);
+            rim.setStrokeWidth(2.5f * k);
+        }
         int last = Math.min(shelf.size(), shelfFirst + shelfVisible);
         // Scrolling, tiles slide in and out through the glass's sides (only those that show any part are drawn). Only
         // then: on a shelf that fits, the clip would cut the end tiles' shadows in a straight line.
@@ -1407,6 +1457,20 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             drawLogo(c, it, cell, s, 0);
         } else {
             if (it.tile != null) roundImage(c, it.tile, it.tileShader, cell, r);
+        }
+        // Which one has the focus, at a glance: a light rim on it (as on the focused card) and a shade on the others.
+        float shade = shelfOn * (1 - fc) * (1 - Ui.clamp(l));
+        if (shade > 0.01f) {
+            tileFill.setShader(null);
+            tileFill.setColor(Ui.alpha(0xFF000000, tone(0.34f, 0.48f) * shade));
+            c.drawRoundRect(cell, r, r, tileFill);
+        }
+        if (fc > 0.01f) {
+            float inset = 1.25f * k;
+            tmp.set(cell.left + inset, cell.top + inset, cell.right - inset, cell.bottom - inset);
+            rim.setShader(null);
+            rim.setColor(Ui.alpha(0xFFFFFFFF, 0.85f * fc));
+            c.drawRoundRect(tmp, r - inset, r - inset, rim);
         }
     }
 
@@ -1579,6 +1643,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         bigTemp.setColor(drawerInk(1));
         hourPaint.setColor(tone(L_DIM, 0xADFFFFFF));
         hourTemp.setColor(drawerInk(0.95f));
+        dayLow.setColor(tone(L_DIM, 0xADFFFFFF));
         pricePaint.setColor(drawerInk(0.95f));
         float titleBase = ROW_TITLE * k;
         if (drawerInputs > 0) c.drawText(Ui.tr("Inputs"), drawerRects[0].left + 4 * k, titleBase, rowTitle);
@@ -1625,7 +1690,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         drawerLabel.setTextSize(23 * k);
     }
 
-    /** Weather for your location: now (large), the next 6 hours, and sunrise and sunset. */
+    /** Weather for your location: now (large), the next 6 hours or 5 days, and sunrise and sunset. */
     private void drawWeatherCard(Canvas c, RectF r) {
         drawerCard(c, r);
         if (Ui.LEGACY) weatherSnapshot.draw(c, r, drawerCardsKey(), cc -> drawWeather(cc, r));
@@ -1651,12 +1716,27 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         fill.setShader(null);
         fill.setColor(tone(0x1A000000, 0x24FFFFFF));
         c.drawRoundRect(split - k, r.top + 34 * k, split + k, r.bottom - 34 * k, k, k, fill);
-        float hx = split + 30 * k, hw = (r.right - 30 * k - hx) / 6;
-        for (int i = 0; i < wx.hours.size() && i < 6; i++) {
-            float hc = hx + hw * (i + 0.5f);
-            c.drawText(hourText[i], hc, r.top + 96 * k, hourPaint);
-            Symbols.draw(getContext(), c, Symbols.weather(wx.hourCode.get(i), wx.hourDay.get(i)), hc, r.top + 142 * k, 30 * k, drawerInk(0.9f));
-            c.drawText(hourTempText[i], hc, r.top + 196 * k, hourTemp);
+        float hx = split + 30 * k;
+        if (textDays) {
+            float hw = (r.right - 30 * k - hx) / 5;
+            for (int i = 0; i < wx.days.size() && i < 5; i++) {
+                float hc = hx + hw * (i + 0.5f);
+                c.drawText(dayText[i], hc, r.top + 96 * k, hourPaint);
+                Symbols.draw(getContext(), c, Symbols.weather(wx.dayCode.get(i), true), hc, r.top + 142 * k, 30 * k, drawerInk(0.9f));
+                // The high, then the low dimmed, centered together (closer than the next day, so the pairs read apart).
+                float maxW = hourTemp.measureText(dayMaxText[i]), minW = dayLow.measureText(dayMinText[i]), gap = 6 * k;
+                float left = hc - (maxW + gap + minW) / 2;
+                c.drawText(dayMaxText[i], left + maxW / 2, r.top + 196 * k, hourTemp);
+                c.drawText(dayMinText[i], left + maxW + gap + minW / 2, r.top + 196 * k, dayLow);
+            }
+        } else {
+            float hw = (r.right - 30 * k - hx) / 6;
+            for (int i = 0; i < wx.hours.size() && i < 6; i++) {
+                float hc = hx + hw * (i + 0.5f);
+                c.drawText(hourText[i], hc, r.top + 96 * k, hourPaint);
+                Symbols.draw(getContext(), c, Symbols.weather(wx.hourCode.get(i), wx.hourDay.get(i)), hc, r.top + 142 * k, 30 * k, drawerInk(0.9f));
+                c.drawText(hourTempText[i], hc, r.top + 196 * k, hourTemp);
+            }
         }
         float sx = hx, base = r.top + 258 * k;
         if (wx.sunrise != 0) sx = sunItem(c, "sunrise", sunriseText, sx, base) + 36 * k;
@@ -1673,7 +1753,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             weatherTitle = Prefs.city().isEmpty() ? Ui.tr("Weather") : Prefs.city();
             nowTemp = HomeData.degrees(wx.temp);
             highLow = HomeData.highLow(wx, "   ");
-            for (int i = 0; i < wx.hours.size() && i < 6; i++) {
+            textDays = Prefs.forecast().equals("days") && !wx.days.isEmpty();   // no days yet (an older forecast, offline): the hours
+            for (int i = 0; textDays && i < wx.days.size() && i < 5; i++) {
+                dayText[i] = HomeData.weekday(wx.days.get(i));
+                dayMaxText[i] = HomeData.degrees(wx.dayMax.get(i));
+                dayMinText[i] = HomeData.degrees(wx.dayMin.get(i));
+            }
+            for (int i = 0; !textDays && i < wx.hours.size() && i < 6; i++) {
                 hourText[i] = HomeData.hour(wx.hours.get(i));
                 hourTempText[i] = HomeData.degrees(wx.hourTemp.get(i));
             }
@@ -1815,6 +1901,18 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         retargetGrid(true);
         gridDirty = true;
     }
+
+    /** All Apps from the remote's button. Coming back from another app, resume() opens it (it closes the sheet). */
+    void showAllApps() {
+        if (!running) {
+            allAppsOnResume = true;
+            return;
+        }
+        reset(false);
+        openSheet();
+    }
+
+    private boolean allAppsOnResume;
 
     private void openSheet() {
         sheetOpen = true;
@@ -2736,10 +2834,20 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (Double.isNaN(wx.temp)) return s.append(". ").append(Ui.tr("No weather data right now.")).toString();
         s.append(". ").append(HomeData.degrees(wx.temp)).append(", ").append(HomeData.condition(wx.code, wx.isDay)).append(". ")
                 .append(Ui.trf("High {max}, low {min}.", "max", HomeData.degrees(wx.max), "min", HomeData.degrees(wx.min)));
-        int hours = Math.min(6, wx.hours.size());
-        if (hours > 0) {
+        if (Prefs.forecast().equals("days") && !wx.days.isEmpty()) {   // as the card: the hours until there are days
             StringBuilder list = new StringBuilder();
-            for (int i = 0; i < hours; i++) {
+            for (int i = 0; i < wx.days.size() && i < 5; i++) {
+                // "Monday: High 25°, low 18°; Tuesday: …": the whole day ("Sun" and "Sat" are words of their own), and
+                // which number is the high (the sentence's own end dropped).
+                String range = Ui.trf("High {max}, low {min}.", "max", HomeData.degrees(wx.dayMax.get(i)),
+                        "min", HomeData.degrees(wx.dayMin.get(i))).replaceAll("[.。।]$", "");
+                if (i > 0) list.append("; ");
+                list.append(HomeData.weekdayName(wx.days.get(i))).append(": ").append(range);
+            }
+            s.append(' ').append(Ui.trf("Next days: {list}.", "list", list));
+        } else if (!wx.hours.isEmpty()) {
+            StringBuilder list = new StringBuilder();
+            for (int i = 0; i < wx.hours.size() && i < 6; i++) {
                 if (i > 0) list.append(", ");
                 list.append(HomeData.hour(wx.hours.get(i))).append(' ').append(HomeData.degrees(wx.hourTemp.get(i)));
             }
@@ -3029,6 +3137,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 c.drawText(label, x, r.bottom + (40 + 4 * f) * k, lTip);
             }
         }
+        if (sleepText.isEmpty()) return;
+        float right = (lightButtons.isEmpty() ? CONTENT_R * k : topRects[3].left) - 28 * k, cy = L_BUTTON_CY * k;
+        float tw = lQuote.measureText(sleepText), size = lQuote.getTextSize();
+        c.drawText(sleepText, right - tw, cy + Ui.halfCap(lQuote), lQuote);
+        Symbols.draw(getContext(), c, "bedtime", right - tw - size * 0.9f, cy, size, lQuote.getColor());
     }
 
     private boolean moveLight(int dx, int dy) {
