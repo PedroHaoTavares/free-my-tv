@@ -100,6 +100,22 @@ final class HomeMode {
     };
 
     /**
+     * Extra packages to keep off, from keep_off in config.properties: ones the firmware brings back on every boot (a
+     * Xiaomi stick restores Netflix and Prime Video, even after "pm uninstall --user 0"), turned off again by the boot
+     * check. Original turns them back on. Only well-formed package names; still never a protected one.
+     */
+    static final List<String> KEEP_OFF = keepOff(Config.KEEP_OFF);
+
+    private static List<String> keepOff(String value) {
+        List<String> out = new ArrayList<>();
+        for (String pkg : value.split(",")) {
+            pkg = pkg.trim();
+            if (pkg.matches("[A-Za-z]\\w*(\\.[A-Za-z]\\w*)+") && !pkg.equals(PKG) && !out.contains(pkg)) out.add(pkg);
+        }
+        return out;
+    }
+
+    /**
      * The voice assistant, only with disable_assistant=true in config.properties (the mic button stops working). With it,
      * also Google's text-to-speech (its voice; ~45 MB on a 2 GB TCL), which TalkBack needs too.
      */
@@ -192,7 +208,7 @@ final class HomeMode {
 
     /** Checked before every disable: never the protected list, Amazon's packages, Android's own pieces or a factory menu. */
     private static boolean mayTurnOff(String pkg) {
-        return !PROTECTED.contains(pkg) && !pkg.startsWith("com.amazon.")
+        return !PROTECTED.contains(pkg) && (!pkg.startsWith("com.amazon.") || KEEP_OFF.contains(pkg))
                 && !CORE.matcher(pkg).matches() && !FACTORY.matcher(pkg).matches();
     }
 
@@ -738,6 +754,7 @@ final class HomeMode {
         if (dreamPkg != null && !dreamPkg.equals(PKG) && !dreamPkg.equals(homePkg)) out.add(dreamPkg);
         out.addAll(Arrays.asList(DEBLOAT));
         if (Config.DISABLE_ASSISTANT) out.addAll(Arrays.asList(ASSISTANT));
+        out.addAll(KEEP_OFF);
         return out;
     }
 

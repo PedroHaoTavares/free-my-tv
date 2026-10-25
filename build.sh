@@ -83,6 +83,7 @@ final class Config {
     static final String JELLYFIN_USER = "$(prop jellyfin_user '')";
     static final String JELLYFIN_PASSWORD = "$(prop jellyfin_password '')";
     static final String JELLYFIN_TABS = "$(prop jellyfin_tabs '')";
+    static final String KEEP_OFF = "$(prop keep_off '')";
     static final boolean DISABLE_ASSISTANT = $ASSIST;
     static final boolean SHOW_CRYPTO = $CRYPTO;
     static final boolean HIDE_ANIMATION = $ANIMATION;
